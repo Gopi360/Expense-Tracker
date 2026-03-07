@@ -5,6 +5,8 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,6 +22,8 @@ public class AddTransactionActivity extends AppCompatActivity {
     private static final int COLOR_TEAL        = 0xFF00D4AA;
 
     private EditText       etAmount, etDescription;
+    private RadioGroup     rgPaymentMethod;
+    private RadioButton    rbCash, rbBank;
     private String         transactionType;
     private DatabaseHelper dbHelper;
 
@@ -33,6 +37,9 @@ public class AddTransactionActivity extends AppCompatActivity {
 
         etAmount      = findViewById(R.id.etAmount);
         etDescription = findViewById(R.id.etDescription);
+        rgPaymentMethod = findViewById(R.id.rgPaymentMethod);
+        rbCash        = findViewById(R.id.rbCash);
+        rbBank        = findViewById(R.id.rbBank);
         TextView tvTypeLabel = findViewById(R.id.tvTypeLabel);
         TextView tvTitle     = findViewById(R.id.tvTitle);
         Button   btnDone     = findViewById(R.id.btnDone);
@@ -86,7 +93,10 @@ public class AddTransactionActivity extends AppCompatActivity {
             return;
         }
 
-        boolean ok = dbHelper.insertTransaction(transactionType, amount, description);
+        // Get selected payment method
+        String paymentMethod = rbCash.isChecked() ? "cash" : "bank";
+
+        boolean ok = dbHelper.insertTransaction(transactionType, amount, description, paymentMethod);
         if (ok) {
             Toast.makeText(this, "✓ Transaction saved", Toast.LENGTH_SHORT).show();
             finish();

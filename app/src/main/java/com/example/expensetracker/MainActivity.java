@@ -11,7 +11,7 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
-    private TextView       tvBalance;
+    private TextView       tvBalance, tvCashBalance, tvBankBalance;
     private DatabaseHelper dbHelper;
 
     @Override
@@ -21,6 +21,8 @@ public class MainActivity extends AppCompatActivity {
 
         dbHelper  = new DatabaseHelper(this);
         tvBalance = findViewById(R.id.tvBalance);
+        tvCashBalance = findViewById(R.id.tvCashBalance);
+        tvBankBalance = findViewById(R.id.tvBankBalance);
 
         Button btnCredit  = findViewById(R.id.btnCredit);
         Button btnDebit   = findViewById(R.id.btnDebit);
@@ -46,8 +48,16 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshBalance() {
         double balance = dbHelper.getBalance();
+        double cashBalance = dbHelper.getCashBalance();
+        double bankBalance = dbHelper.getBankBalance();
+        
         tvBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", balance));
+        tvCashBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", cashBalance));
+        tvBankBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", bankBalance));
+        
         // Teal = healthy, Red = overdrawn
         tvBalance.setTextColor(balance < 0 ? 0xFFF85149 : 0xFF00D4AA);
+        tvCashBalance.setTextColor(cashBalance < 0 ? 0xFFF85149 : 0xFF56D364);
+        tvBankBalance.setTextColor(bankBalance < 0 ? 0xFFF85149 : 0xFF6CB6FF);
     }
 }

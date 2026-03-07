@@ -106,7 +106,57 @@
                 android:paddingHorizontal="16dp"
                 android:paddingVertical="14dp"
                 android:background="#1C2128"
-                android:layout_marginBottom="32dp" />
+                android:layout_marginBottom="22dp" />
+
+            <!-- ── Payment Method ────────────────────────────────────────── -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Payment Method"
+                android:textSize="12sp"
+                android:textColor="#8B949E"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="6dp"/>
+
+            <RadioGroup
+                android:id="@+id/rgPaymentMethod"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="32dp">
+
+                <RadioButton
+                    android:id="@+id/rbCash"
+                    android:layout_width="0dp"
+                    android:layout_height="54dp"
+                    android:layout_weight="1"
+                    android:text="💵  CASH"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@drawable/radio_button_text_color"
+                    android:fontFamily="monospace"
+                    android:background="@drawable/radio_button_selector"
+                    android:button="@null"
+                    android:gravity="center"
+                    android:checked="true"
+                    android:layout_marginEnd="6dp"/>
+
+                <RadioButton
+                    android:id="@+id/rbBank"
+                    android:layout_width="0dp"
+                    android:layout_height="54dp"
+                    android:layout_weight="1"
+                    android:text="🏦  BANK"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@drawable/radio_button_text_color"
+                    android:fontFamily="monospace"
+                    android:background="@drawable/radio_button_selector"
+                    android:button="@null"
+                    android:gravity="center"
+                    android:layout_marginStart="6dp"/>
+            </RadioGroup>
 
             <!-- ── Save Button ───────────────────────────────────────────── -->
             <Button

@@ -47,6 +47,10 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
         h.tvDescription.setText(t.getDescription());
         h.tvBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", t.getBalanceAfterTransaction()));
 
+        // Set payment method icon
+        String paymentIcon = "cash".equals(t.getPaymentMethod()) ? "💵" : "🏦";
+        h.tvPaymentMethod.setText(" • " + paymentIcon);
+
         if (isCredit) {
             h.tvType.setText("▲ CREDIT");
             h.tvAmount.setText(String.format(Locale.getDefault(), "+ ₹%.2f", t.getAmount()));
@@ -74,7 +78,7 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
-        TextView tvDateTime, tvType, tvAmount, tvDescription, tvBalance;
+        TextView tvDateTime, tvType, tvAmount, tvDescription, tvBalance, tvPaymentMethod;
 
         ViewHolder(@NonNull View view) {
             super(view);
@@ -83,6 +87,7 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
             tvAmount      = view.findViewById(R.id.tvAmount);
             tvDescription = view.findViewById(R.id.tvDescription);
             tvBalance     = view.findViewById(R.id.tvBalance);
+            tvPaymentMethod = view.findViewById(R.id.tvPaymentMethod);
         }
     }
 }

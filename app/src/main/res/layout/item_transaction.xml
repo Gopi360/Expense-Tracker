@@ -39,15 +39,30 @@
             android:maxLines="2"
             android:ellipsize="end" />
 
-        <TextView
-            android:id="@+id/tvType"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="DEBIT"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:fontFamily="monospace"
-            android:layout_marginTop="2dp" />
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp">
+
+            <TextView
+                android:id="@+id/tvType"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DEBIT"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:id="@+id/tvPaymentMethod"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" • 💵"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:textColor="#8B949E" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- ── Right: Amount + Balance ───────────────────────────────────────── -->

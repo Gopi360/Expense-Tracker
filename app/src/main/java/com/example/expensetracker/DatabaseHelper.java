@@ -16,7 +16,7 @@ import java.util.UUID;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME    = "expense_tracker.db";
-    private static final int    DATABASE_VERSION = 1;
+    private static final int    DATABASE_VERSION = 2;
 
     // Table & column names
     private static final String TABLE  = "transactions";
@@ -26,6 +26,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_DESC    = "description";
     private static final String COL_DATE    = "dateTime";
     private static final String COL_BALANCE = "balanceAfter";
+    private static final String COL_PAYMENT = "paymentMethod";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -39,23 +40,27 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_AMOUNT  + " REAL NOT NULL, "
                 + COL_DESC    + " TEXT, "
                 + COL_DATE    + " INTEGER NOT NULL, "
-                + COL_BALANCE + " REAL NOT NULL)";
+                + COL_BALANCE + " REAL NOT NULL, "
+                + COL_PAYMENT + " TEXT DEFAULT 'cash')";
         db.execSQL(sql);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE);
-        onCreate(db);
+        if (oldVersion < 2) {
+            // Add paymentMethod column to existing table
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN " + COL_PAYMENT + " TEXT DEFAULT 'cash'");
+        }
     }
 
     // ─── INSERT ──────────────────────────────────────────────────────────────
 
     /**
      * Insert a new transaction. Automatically calculates the new balance.
+     * @param paymentMethod "cash" or "bank"
      * @return true if insert was successful
      */
-    public boolean insertTransaction(String type, double amount, String description) {
+    public boolean insertTransaction(String type, double amount, String description, String paymentMethod) {
         SQLiteDatabase db = this.getWritableDatabase();
         try {
             double currentBalance = getBalanceInternal(db);
@@ -70,6 +75,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             values.put(COL_DESC,    description);
             values.put(COL_DATE,    System.currentTimeMillis());
             values.put(COL_BALANCE, newBalance);
+            values.put(COL_PAYMENT, paymentMethod);
 
             return db.insert(TABLE, null, values) != -1;
         } finally {
@@ -117,13 +123,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         + " LIMIT " + limit + " OFFSET " + offset, null);
         try {
             while (cursor.moveToNext()) {
+                String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
+                if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
+                
                 list.add(new Transaction(
                         cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
                         cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
                         cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
                         cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
                         cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
-                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE))
+                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
+                        paymentMethod
                 ));
             }
         } finally {
@@ -144,5 +154,48 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         cursor.close();
         db.close();
         return count;
+    }
+
+    /**
+     * Returns the cash balance (sum of credits minus debits for cash transactions).
+     */
+    public double getCashBalance() {
+        return getBalanceByPaymentMethod("cash");
+    }
+
+    /**
+     * Returns the bank balance (sum of credits minus debits for bank transactions).
+     */
+    public double getBankBalance() {
+        return getBalanceByPaymentMethod("bank");
+    }
+
+    private double getBalanceByPaymentMethod(String paymentMethod) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        try {
+            // Calculate balance: sum of credits minus sum of debits
+            Cursor cursor = db.rawQuery(
+                    "SELECT " + COL_TYPE + ", SUM(" + COL_AMOUNT + ") FROM " + TABLE
+                            + " WHERE " + COL_PAYMENT + " = ?"
+                            + " GROUP BY " + COL_TYPE,
+                    new String[]{paymentMethod});
+            
+            double credits = 0;
+            double debits = 0;
+            
+            while (cursor.moveToNext()) {
+                String type = cursor.getString(0);
+                double sum = cursor.getDouble(1);
+                if ("credit".equals(type)) {
+                    credits = sum;
+                } else if ("debit".equals(type)) {
+                    debits = sum;
+                }
+            }
+            cursor.close();
+            return credits - debits;
+        } finally {
+            db.close();
+        }
     }
 }
