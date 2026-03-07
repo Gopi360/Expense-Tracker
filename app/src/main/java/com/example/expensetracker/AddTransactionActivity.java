@@ -39,14 +39,14 @@ public class AddTransactionActivity extends AppCompatActivity {
         Button   btnCancel   = findViewById(R.id.btnCancel);
 
         if ("credit".equals(transactionType)) {
-            tvTitle.setText("add.income");
+            tvTitle.setText("DEPOSIT");
             tvTypeLabel.setText("▲  CREDIT — Income");
             tvTypeLabel.setTextColor(COLOR_GREEN);
             tvTypeLabel.setBackgroundColor(COLOR_GREEN_DIM);
             btnDone.setBackgroundTintList(ColorStateList.valueOf(COLOR_GREEN));
             btnDone.setTextColor(0xFF0D1117);
         } else {
-            tvTitle.setText("add.expense");
+            tvTitle.setText("WITHDRAW");
             tvTypeLabel.setText("▼  DEBIT — Expense");
             tvTypeLabel.setTextColor(COLOR_RED);
             tvTypeLabel.setBackgroundColor(COLOR_RED_DIM);
