@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D1117">
+
+    <!-- ── Top Bar ──────────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#161B22"
+        android:paddingVertical="18dp"
+        android:paddingHorizontal="20dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="// "
+            android:textColor="#00D4AA"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"/>
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="add.transaction"
+            android:textColor="#E6EDF3"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"/>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- ── Type Badge ───────────────────────────────────────────── -->
+            <TextView
+                android:id="@+id/tvTypeLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="DEBIT — Expense"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:paddingVertical="14dp"
+                android:layout_marginBottom="24dp" />
+
+            <!-- ── Amount ───────────────────────────────────────────────── -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$ amount"
+                android:textSize="12sp"
+                android:textColor="#8B949E"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="6dp"/>
+
+            <EditText
+                android:id="@+id/etAmount"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:hint="0.00"
+                android:inputType="numberDecimal"
+                android:textSize="30sp"
+                android:textStyle="bold"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#484F58"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="12dp"
+                android:background="#1C2128"
+                android:layout_marginBottom="22dp" />
+
+            <!-- ── Description ──────────────────────────────────────────── -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="$ description"
+                android:textSize="12sp"
+                android:textColor="#8B949E"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:layout_marginBottom="6dp"/>
+
+            <EditText
+                android:id="@+id/etDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="What is this for?"
+                android:inputType="textCapSentences"
+                android:textSize="18sp"
+                android:textColor="#E6EDF3"
+                android:textColorHint="#484F58"
+                android:paddingHorizontal="16dp"
+                android:paddingVertical="14dp"
+                android:background="#1C2128"
+                android:layout_marginBottom="32dp" />
+
+            <!-- ── Save Button ───────────────────────────────────────────── -->
+            <Button
+                android:id="@+id/btnDone"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:text="SAVE TRANSACTION"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:backgroundTint="#F85149"
+                android:textColor="#FFFFFF" />
+
+            <!-- ── Cancel Button ─────────────────────────────────────────── -->
+            <Button
+                android:id="@+id/btnCancel"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="Cancel"
+                android:textSize="15sp"
+                android:backgroundTint="#1C2128"
+                android:textColor="#8B949E"
+                android:layout_marginTop="10dp" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

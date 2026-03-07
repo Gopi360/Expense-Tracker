@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ExpenseTracker" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/colorAccent</item>
+        <item name="colorPrimaryVariant">@color/colorAccentDim</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="android:windowBackground">@color/colorBg</item>
+        <item name="android:textColor">@color/colorTextPrimary</item>
+        <item name="android:editTextStyle">@style/DarkEditText</item>
+    </style>
+
+    <!-- Forces EditText to always show dark background + light text -->
+    <style name="DarkEditText" parent="Widget.MaterialComponents.TextInputEditText.OutlinedBox">
+        <item name="android:textColor">@color/colorTextPrimary</item>
+        <item name="android:textColorHint">@color/colorTextHint</item>
+        <item name="android:background">@color/colorCard</item>
+    </style>
+</resources>

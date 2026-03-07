@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D1117">
+
+    <!-- ── Top Bar ──────────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#161B22"
+        android:paddingVertical="14dp"
+        android:paddingHorizontal="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="← Back"
+            android:textColor="#00D4AA"
+            android:textSize="13sp"
+            android:backgroundTint="#1C2128"
+            android:paddingHorizontal="12dp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="// history"
+            android:textColor="#E6EDF3"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"
+            android:gravity="center" />
+
+        <View android:layout_width="80dp" android:layout_height="1dp" />
+    </LinearLayout>
+
+    <!-- ── Column Headers ───────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#161B22"
+        android:paddingVertical="8dp"
+        android:paddingHorizontal="12dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.2"
+            android:text="DATE"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:textColor="#8B949E"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.1"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="2"
+            android:text="DESCRIPTION"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:textColor="#8B949E"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.1"
+            android:paddingHorizontal="4dp"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1.5"
+            android:text="AMOUNT"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:textColor="#8B949E"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.1"
+            android:gravity="end"/>
+    </LinearLayout>
+
+    <!-- ── Empty State ──────────────────────────────────────────────────── -->
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="$ no transactions found_\n\nAdd income or expense from home screen."
+        android:textSize="14sp"
+        android:textColor="#484F58"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:padding="48dp"
+        android:visibility="gone" />
+
+    <!-- ── Transaction List ─────────────────────────────────────────────── -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="4dp" />
+
+    <!-- ── Load More ─────────────────────────────────────────────────────── -->
+    <Button
+        android:id="@+id/btnLoadMore"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="Load More"
+        android:textSize="14sp"
+        android:backgroundTint="#1C2128"
+        android:textColor="#00D4AA"
+        android:visibility="gone" />
+
+</LinearLayout>
