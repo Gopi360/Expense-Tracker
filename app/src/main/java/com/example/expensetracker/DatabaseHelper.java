@@ -109,6 +109,37 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
     }
 
+    // ─── UPDATE ──────────────────────────────────────────────────────────────
+
+    /**
+     * Updates an existing transaction in place, then rebuilds the balance cache.
+     * dateTime is deliberately preserved so the row keeps its position in history.
+     *
+     * @return true if a row with this id existed and was updated
+     */
+    public boolean updateTransaction(String id, String type, double amount,
+                                     String description, String paymentMethod) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            ContentValues values = new ContentValues();
+            values.put(COL_TYPE,    type);
+            values.put(COL_AMOUNT,  amount);
+            values.put(COL_DESC,    description);
+            values.put(COL_PAYMENT, paymentMethod);
+
+            int rows = db.update(TABLE, values, COL_ID + " = ?", new String[]{id});
+            if (rows == 0) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     // ─── QUERY ───────────────────────────────────────────────────────────────
 
     /**

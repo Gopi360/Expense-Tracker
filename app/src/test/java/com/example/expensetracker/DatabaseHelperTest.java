@@ -3,6 +3,8 @@ package com.example.expensetracker;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 
@@ -109,4 +111,64 @@ public class DatabaseHelperTest {
 
         assertNull(db.getTransaction("no-such-id"));
     }
+
+    @Test
+    public void editingAmountMovesTheBalance() {
+        db.insertTransaction("debit", 5000.0, "Typo, meant 500", "cash");
+        String id = db.getTransactions(0, 50).get(0).getId();
+
+        assertEquals(-5000.0, db.getBalance(), DELTA);
+
+        assertTrue(db.updateTransaction(id, "debit", 500.0, "Groceries", "cash"));
+
+        assertEquals(-500.0, db.getBalance(), DELTA);
+        assertEquals("Groceries", db.getTransaction(id).getDescription());
+    }
+
+    @Test
+    public void editingTypeFromCreditToDebitMovesTheBalance() {
+        db.insertTransaction("credit", 750.0, "Tapped the wrong button", "cash");
+        String id = db.getTransactions(0, 50).get(0).getId();
+
+        assertEquals(750.0, db.getBalance(), DELTA);
+
+        assertTrue(db.updateTransaction(id, "debit", 750.0, "Dinner", "cash"));
+
+        assertEquals(-750.0, db.getBalance(), DELTA);
+        assertEquals("debit", db.getTransaction(id).getType());
+    }
+
+    @Test
+    public void editingPaymentMethodMovesMoneyBetweenCashAndBank() {
+        db.insertTransaction("debit", 200.0, "Snacks", "cash");
+        String id = db.getTransactions(0, 50).get(0).getId();
+
+        assertEquals(-200.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+
+        assertTrue(db.updateTransaction(id, "debit", 200.0, "Snacks", "bank"));
+
+        assertEquals(0.0, db.getCashBalance(), DELTA);
+        assertEquals(-200.0, db.getBankBalance(), DELTA);
+        assertEquals(-200.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void editingPreservesTheOriginalTimestamp() {
+        db.insertTransaction("debit", 100.0, "Original", "cash");
+        Transaction before = db.getTransactions(0, 50).get(0);
+
+        assertTrue(db.updateTransaction(before.getId(), "credit", 999.0, "Changed", "bank"));
+
+        assertEquals(before.getDateTime(), db.getTransaction(before.getId()).getDateTime());
+    }
+
+    @Test
+    public void updatingAnUnknownIdReturnsFalse() {
+        db.insertTransaction("credit", 100.0, "Something", "cash");
+
+        assertFalse(db.updateTransaction("no-such-id", "debit", 5.0, "x", "cash"));
+        assertEquals(100.0, db.getBalance(), DELTA);
+    }
+
 }
