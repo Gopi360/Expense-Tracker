@@ -140,6 +140,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
     }
 
+    // ─── DELETE ──────────────────────────────────────────────────────────────
+
+    /**
+     * Permanently removes a transaction, then rebuilds the balance cache.
+     * There is no undo — callers must confirm with the user first.
+     *
+     * @return true if a row with this id existed and was removed
+     */
+    public boolean deleteTransaction(String id) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int rows = db.delete(TABLE, COL_ID + " = ?", new String[]{id});
+            if (rows == 0) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     // ─── QUERY ───────────────────────────────────────────────────────────────
 
     /**

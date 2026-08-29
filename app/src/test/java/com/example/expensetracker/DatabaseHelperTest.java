@@ -171,4 +171,59 @@ public class DatabaseHelperTest {
         assertEquals(100.0, db.getBalance(), DELTA);
     }
 
+    @Test
+    public void deletingAMidHistoryRowKeepsEveryBalanceCorrect() {
+        db.insertTransaction("credit", 1000.0, "Salary", "cash");
+        db.insertTransaction("debit", 400.0, "Mistake", "cash");
+        db.insertTransaction("debit", 100.0, "Chai", "cash");
+
+        assertEquals(500.0, db.getBalance(), DELTA);
+
+        // getTransactions is newest-first, so index 1 is the middle row.
+        String midId = db.getTransactions(0, 50).get(1).getId();
+        assertTrue(db.deleteTransaction(midId));
+
+        assertEquals(900.0, db.getBalance(), DELTA);
+        assertEquals(900.0, db.getCashBalance(), DELTA);
+
+        java.util.List<Transaction> all = db.getTransactions(0, 50);
+        assertEquals(2, all.size());
+        assertEquals(900.0, all.get(0).getBalanceAfterTransaction(), DELTA);
+        assertEquals(1000.0, all.get(1).getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void deletingTheOnlyTransactionReturnsBalanceToZero() {
+        db.insertTransaction("credit", 1234.0, "Only one", "bank");
+        String id = db.getTransactions(0, 50).get(0).getId();
+
+        assertTrue(db.deleteTransaction(id));
+
+        assertEquals(0.0, db.getBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+        assertEquals(0, db.getTotalCount());
+    }
+
+    @Test
+    public void getTotalCountReflectsADeletion() {
+        db.insertTransaction("credit", 10.0, "A", "cash");
+        db.insertTransaction("credit", 20.0, "B", "cash");
+        db.insertTransaction("credit", 30.0, "C", "cash");
+
+        assertEquals(3, db.getTotalCount());
+
+        db.deleteTransaction(db.getTransactions(0, 50).get(0).getId());
+
+        assertEquals(2, db.getTotalCount());
+    }
+
+    @Test
+    public void deletingAnUnknownIdReturnsFalse() {
+        db.insertTransaction("credit", 100.0, "Something", "cash");
+
+        assertFalse(db.deleteTransaction("no-such-id"));
+        assertEquals(1, db.getTotalCount());
+        assertEquals(100.0, db.getBalance(), DELTA);
+    }
+
 }
