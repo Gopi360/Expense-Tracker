@@ -77,7 +77,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "UPDATE " + TABLE + " SET " + COL_BALANCE + " = ("
                         + "SELECT " + signedSum("t2.")
                         + " FROM " + TABLE + " t2"
-                        + " WHERE t2." + COL_DATE + " <= " + TABLE + "." + COL_DATE + ")");
+                        + " WHERE t2." + COL_DATE + " < " + TABLE + "." + COL_DATE
+                        + " OR (t2." + COL_DATE + " = " + TABLE + "." + COL_DATE
+                        + " AND t2.rowid <= " + TABLE + ".rowid))");
     }
 
     /**
@@ -190,7 +192,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery(
                 "SELECT * FROM " + TABLE
-                        + " ORDER BY " + COL_DATE + " DESC"
+                        + " ORDER BY " + COL_DATE + " DESC, rowid DESC"
                         + " LIMIT " + limit + " OFFSET " + offset, null);
         try {
             while (cursor.moveToNext()) {

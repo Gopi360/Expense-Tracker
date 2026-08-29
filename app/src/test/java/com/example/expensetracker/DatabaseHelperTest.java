@@ -226,4 +226,25 @@ public class DatabaseHelperTest {
         assertEquals(100.0, db.getBalance(), DELTA);
     }
 
+    @Test
+    public void rapidInsertsKeepPerRowBalancesConsistent() {
+        for (int i = 0; i < 50; i++) {
+            String type = (i % 2 == 0) ? "credit" : "debit";
+            db.insertTransaction(type, i + 1.0, "Row " + i, "cash");
+        }
+
+        java.util.List<Transaction> all = db.getTransactions(0, 50);
+        assertEquals(50, all.size());
+
+        // Walk from the oldest row (bottom of the newest-first list) upward,
+        // accumulating the running balance and checking it against the cache
+        // at every step. Holds regardless of how many rows share a dateTime.
+        double running = 0.0;
+        for (int i = all.size() - 1; i >= 0; i--) {
+            Transaction t = all.get(i);
+            running += "credit".equals(t.getType()) ? t.getAmount() : -t.getAmount();
+            assertEquals(running, t.getBalanceAfterTransaction(), DELTA);
+        }
+    }
+
 }
