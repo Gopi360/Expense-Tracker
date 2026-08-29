@@ -44,4 +44,31 @@ public class DatabaseHelperTest {
 
         assertEquals(800.0, db.getBalance(), DELTA);
     }
+
+    @Test
+    public void cashAndBankBalancesStayIsolated() {
+        db.insertTransaction("credit", 5000.0, "Salary", "bank");
+        db.insertTransaction("debit", 300.0, "Chai", "cash");
+        db.insertTransaction("credit", 1000.0, "Cash gift", "cash");
+
+        assertEquals(5000.0, db.getBankBalance(), DELTA);
+        assertEquals(700.0, db.getCashBalance(), DELTA);
+    }
+
+    @Test
+    public void totalBalanceEqualsCashPlusBank() {
+        db.insertTransaction("credit", 5000.0, "Salary", "bank");
+        db.insertTransaction("debit", 1200.0, "Rent", "bank");
+        db.insertTransaction("debit", 300.0, "Chai", "cash");
+        db.insertTransaction("credit", 800.0, "Gift", "cash");
+
+        assertEquals(db.getCashBalance() + db.getBankBalance(), db.getBalance(), DELTA);
+        assertEquals(4300.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void emptyDatabaseReportsZeroCashAndBank() {
+        assertEquals(0.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+    }
 }

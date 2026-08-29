@@ -179,30 +179,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private double getBalanceByPaymentMethod(String paymentMethod) {
         SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT " + SQL_SIGNED_SUM + " FROM " + TABLE
+                        + " WHERE COALESCE(" + COL_PAYMENT + ", 'cash') = ?",
+                new String[]{paymentMethod});
         try {
-            // Calculate balance: sum of credits minus sum of debits
-            Cursor cursor = db.rawQuery(
-                    "SELECT " + COL_TYPE + ", SUM(" + COL_AMOUNT + ") FROM " + TABLE
-                            + " WHERE " + COL_PAYMENT + " = ?"
-                            + " GROUP BY " + COL_TYPE,
-                    new String[]{paymentMethod});
-            
-            double credits = 0;
-            double debits = 0;
-            
-            while (cursor.moveToNext()) {
-                String type = cursor.getString(0);
-                double sum = cursor.getDouble(1);
-                if ("credit".equals(type)) {
-                    credits = sum;
-                } else if ("debit".equals(type)) {
-                    debits = sum;
-                }
-            }
-            cursor.close();
-            return credits - debits;
+            return cursor.moveToFirst() ? cursor.getDouble(0) : 0;
         } finally {
-            db.close();
+            cursor.close();
         }
     }
 }
