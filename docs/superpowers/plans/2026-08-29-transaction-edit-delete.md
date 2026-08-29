@@ -33,6 +33,81 @@
 
 ---
 
+## Amendments during execution
+
+Recorded 2026-08-29 while executing this plan. The task text below is left as
+originally written — it is the argument that was made at planning time — but
+where this section contradicts it, **this section is what the code actually
+does.**
+
+### 1. `SQL_SIGNED_SUM` became `signedSum(String qualifier)` (Tasks 1–3)
+
+The plan introduced a constant `SQL_SIGNED_SUM` in Task 1, then had Task 3
+re-inline the same `CASE WHEN` logic with `t2.` qualifiers inside
+`recomputeBalanceCache`. Review flagged the duplication: two encodings of the
+same business rule (the sign convention, and what counts as a credit) that must
+stay in lockstep or the headline balance and the per-row running balance
+silently disagree.
+
+Replaced with a single private helper taking an alias prefix:
+
+```java
+    private static String signedSum(String qualifier) { ... }
+```
+
+Call sites: `signedSum("")` in `getBalance` and `getBalanceByPaymentMethod`,
+`signedSum("t2.")` in `recomputeBalanceCache`. The generated SQL is unchanged.
+
+### 2. The identical-timestamp "accepted limitation" was wrong, and is fixed (Task 6)
+
+**This supersedes the "Accepted limitation" paragraph in the spec and the
+matching note in Task 3's background.**
+
+The spec called same-millisecond `dateTime` collisions "cosmetic only", reasoning
+that hand-typed entries effectively never collide. That is true of real users and
+false of the tests this plan mandates, which insert three or more rows
+microseconds apart. Measured reality: roughly **one failure per 17-test run
+across 7 trials**, reproducible on the Task 1–5 baseline.
+
+Two consequences, not one:
+- `recomputeBalanceCache`'s `<=` correlation gave tied rows an identical running
+  balance.
+- `getTransactions`' `ORDER BY dateTime DESC` had undefined order among ties —
+  which also silently corrupts `LIMIT`/`OFFSET` pagination, duplicating or
+  skipping rows across page boundaries.
+
+Fixed by making the row order **total**, using SQLite's implicit `rowid` as a
+tie-breaker. This is not a schema change: the table is created without
+`WITHOUT ROWID`, so `rowid` already exists on every row. `DATABASE_VERSION`
+stays `2`.
+
+```java
+    // recomputeBalanceCache — lexicographic (dateTime, rowid)
+    " WHERE t2." + COL_DATE + " < " + TABLE + "." + COL_DATE
+  + " OR (t2." + COL_DATE + " = " + TABLE + "." + COL_DATE
+  + " AND t2.rowid <= " + TABLE + ".rowid))"
+```
+
+```java
+    // getTransactions — the exact inverse of that order
+    " ORDER BY " + COL_DATE + " DESC, rowid DESC"
+```
+
+`rowid` is not globally monotonic once deletion exists (SQLite reuses `max+1`
+without `AUTOINCREMENT`), but the invariant this relies on is weaker and does
+hold: **among rows simultaneously present, `rowid` order equals insertion
+order.** A reused number only becomes available after its original holder is
+gone, so it can never rank a newer row below an older coexisting one.
+
+### 3. Test count is 18, not 17
+
+Task 6 added a fifth test beyond its four — `rapidInsertsKeepPerRowBalancesConsistent`,
+which inserts 50 rows in a tight loop and checks each row's cached balance against
+a running total computed independently in Java. It is the regression guard for
+amendment 2.
+
+---
+
 ## File Structure
 
 **Modified:**
@@ -315,6 +390,11 @@ git commit -m "refactor: compute cash and bank balances with a signed sum"
 **Background the implementer needs:**
 
 The rebuild is a single correlated `UPDATE` over the whole table: each row's cache becomes the signed sum of every row at or before its own `dateTime`. That is O(n²) in principle and milliseconds in practice for one person's transaction history on one phone. If it ever becomes noticeable, the optimisation is to restrict the `UPDATE` to rows at or after the mutated timestamp — do not do that speculatively now.
+
+> **SUPERSEDED — see Amendment 2 above.** The paragraph below was wrong and the
+> code no longer behaves this way. Collisions are common in the tests this plan
+> mandates, and the consequence was not cosmetic. Row order is now made total
+> with a `rowid` tie-breaker.
 
 Two rows sharing an identical millisecond timestamp will both show the sum including both. Entries are hand-typed, so a collision is effectively impossible, and the consequence is cosmetic — headline balances are unaffected. This is an accepted limitation, not a bug to fix.
 
@@ -1291,7 +1371,7 @@ git commit -m "feat: open a transaction for editing from history and reload on r
 
 Run: `./gradlew :app:testDebugUnitTest`
 
-Expected: PASS. 17 tests in `DatabaseHelperTest` plus the generated `ExampleUnitTest`.
+Expected: PASS. **18** tests in `DatabaseHelperTest` (17 as originally planned, plus `rapidInsertsKeepPerRowBalancesConsistent` from Amendment 3) plus the generated `ExampleUnitTest`.
 
 - [ ] **Step 2: Build the debug APK**
 
