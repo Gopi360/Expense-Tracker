@@ -1,8 +1,10 @@
 package com.example.expensetracker;
 
 import android.content.res.ColorStateList;
+import android.database.sqlite.SQLiteException;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -17,6 +19,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import java.util.Locale;
 
 public class AddTransactionActivity extends AppCompatActivity {
+
+    private static final String TAG = "AddTransactionActivity";
 
     // Dark theme palette
     private static final int COLOR_GREEN       = 0xFF3FB950;
@@ -68,14 +72,16 @@ public class AddTransactionActivity extends AppCompatActivity {
             transactionType = getIntent().getStringExtra("type");
             if (transactionType == null) {
                 // Reached when the row we meant to edit was deleted elsewhere between the
-                // tap and onCreate: degrade to create mode, but never with a null type.
+                // tap and onCreate: degrade to create mode. This keeps the form usable
+                // (transactionType feeds tvTitle/applyTypeTheme, which don't expect null)
+                // and keeps transactionType provably one of "credit"/"debit" from here on.
                 transactionType = "debit";
             }
             tvTitle.setText("credit".equals(transactionType) ? "DEPOSIT" : "WITHDRAW");
             btnDone.setText("SAVE TRANSACTION");
         } else {
             // ── Edit mode ──
-            transactionType = editingOriginal.getType();
+            transactionType = "credit".equals(editingOriginal.getType()) ? "credit" : "debit";
             tvTitle.setText("EDIT");
             btnDone.setText("UPDATE TRANSACTION");
 
@@ -160,12 +166,18 @@ public class AddTransactionActivity extends AppCompatActivity {
 
         boolean ok;
         String successMessage;
-        if (editingId == null) {
-            ok = dbHelper.insertTransaction(transactionType, amount, description, paymentMethod);
-            successMessage = "✓ Transaction saved";
-        } else {
-            ok = dbHelper.updateTransaction(editingId, transactionType, amount, description, paymentMethod);
-            successMessage = "✓ Transaction updated";
+        try {
+            if (editingId == null) {
+                ok = dbHelper.insertTransaction(transactionType, amount, description, paymentMethod);
+                successMessage = "✓ Transaction saved";
+            } else {
+                ok = dbHelper.updateTransaction(editingId, transactionType, amount, description, paymentMethod);
+                successMessage = "✓ Transaction updated";
+            }
+        } catch (SQLiteException e) {
+            Log.e(TAG, "Failed to save transaction", e);
+            ok = false;
+            successMessage = null;
         }
 
         if (ok) {
@@ -188,7 +200,14 @@ public class AddTransactionActivity extends AppCompatActivity {
                 .setMessage(summary + "\n\nThis cannot be undone.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Delete", (dialog, which) -> {
-                    if (dbHelper.deleteTransaction(editingId)) {
+                    boolean deleted;
+                    try {
+                        deleted = dbHelper.deleteTransaction(editingId);
+                    } catch (SQLiteException e) {
+                        Log.e(TAG, "Failed to delete transaction", e);
+                        deleted = false;
+                    }
+                    if (deleted) {
                         Toast.makeText(this, "✓ Transaction deleted", Toast.LENGTH_SHORT).show();
                         finish();
                     } else {
