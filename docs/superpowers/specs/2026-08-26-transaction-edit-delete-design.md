@@ -69,6 +69,13 @@ UPDATE transactions SET balanceAfter = (
   WHERE t2.dateTime <= transactions.dateTime)
 ```
 
+> **SUPERSEDED (Amendment 3):** the `WHERE` clause above lost the tie-break
+> that shipped. What's actually running adds a `rowid` correlation so ties on
+> `dateTime` resolve deterministically:
+> `WHERE t2.dateTime < transactions.dateTime OR (t2.dateTime = transactions.dateTime AND t2.rowid <= transactions.rowid)`.
+> See "Amendments during execution" in
+> `docs/superpowers/plans/2026-08-29-transaction-edit-delete.md`.
+
 This is O(n²) in principle. With n being one person's transaction count on one
 phone, it is milliseconds. If it ever becomes noticeable, the optimisation is
 to restrict the update to rows at or after the mutated timestamp.
@@ -83,6 +90,16 @@ scroll; writes are occasional manual entry.
 timestamp will show the same `balanceAfter` (the sum including both). Entries
 are created by hand, so a collision is effectively impossible, and the
 consequence is cosmetic only — headline balances are unaffected.
+
+> **SUPERSEDED (Amendment 3):** this limitation was accepted on a false
+> premise and is fixed, not accepted. Measured reality was roughly one
+> collision per 17-test run across 7 trials, and the consequence was not
+> cosmetic: tied rows got an identical running balance, and `getTransactions`'
+> undefined tie order also corrupted `LIMIT`/`OFFSET` pagination. The shipped
+> fix breaks ties with `rowid` (insertion order) in both
+> `recomputeBalanceCache`'s correlation and `getTransactions`' `ORDER BY`. See
+> "Amendments during execution" in
+> `docs/superpowers/plans/2026-08-29-transaction-edit-delete.md`.
 
 ### 2. Edit / delete flow
 
