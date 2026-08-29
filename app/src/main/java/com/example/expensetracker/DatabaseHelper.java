@@ -139,23 +139,42 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         + " LIMIT " + limit + " OFFSET " + offset, null);
         try {
             while (cursor.moveToNext()) {
-                String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
-                if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
-                
-                list.add(new Transaction(
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
-                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
-                        cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
-                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
-                        paymentMethod
-                ));
+                list.add(cursorToTransaction(cursor));
             }
         } finally {
             cursor.close();
         }
         return list;
+    }
+
+    /** Maps the row at the cursor's current position. Assumes the SELECT * column set. */
+    private Transaction cursorToTransaction(Cursor cursor) {
+        String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
+        if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
+
+        return new Transaction(
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
+                cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
+                paymentMethod
+        );
+    }
+
+    /**
+     * Returns the transaction with the given id, or null if there is no such row.
+     */
+    public Transaction getTransaction(String id) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT * FROM " + TABLE + " WHERE " + COL_ID + " = ?", new String[]{id});
+        try {
+            return cursor.moveToFirst() ? cursorToTransaction(cursor) : null;
+        } finally {
+            cursor.close();
+        }
     }
 
     /**

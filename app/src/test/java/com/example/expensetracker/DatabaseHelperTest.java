@@ -1,6 +1,8 @@
 package com.example.expensetracker;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 import android.content.Context;
 
@@ -84,5 +86,27 @@ public class DatabaseHelperTest {
         assertEquals(700.0, all.get(0).getBalanceAfterTransaction(), DELTA);
         assertEquals(600.0, all.get(1).getBalanceAfterTransaction(), DELTA);
         assertEquals(1000.0, all.get(2).getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void getTransactionReturnsTheMatchingRow() {
+        db.insertTransaction("debit", 249.50, "Book", "cash");
+        String id = db.getTransactions(0, 50).get(0).getId();
+
+        Transaction found = db.getTransaction(id);
+
+        assertNotNull(found);
+        assertEquals(id, found.getId());
+        assertEquals("debit", found.getType());
+        assertEquals(249.50, found.getAmount(), DELTA);
+        assertEquals("Book", found.getDescription());
+        assertEquals("cash", found.getPaymentMethod());
+    }
+
+    @Test
+    public void getTransactionOnUnknownIdReturnsNull() {
+        db.insertTransaction("credit", 100.0, "Something", "cash");
+
+        assertNull(db.getTransaction("no-such-id"));
     }
 }
