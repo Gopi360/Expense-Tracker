@@ -71,6 +71,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      * Rebuilds the display-only balanceAfter column for every row, in one statement.
      * Must be called inside an open database transaction, after the mutation.
      * Nothing depends on this column for correctness — headline balances are computed.
+     *
+     * Both this method's correlation and getTransactions' ORDER BY break dateTime ties
+     * with the bare SQLite keyword rowid (not a COL_* constant — it is not a schema
+     * column). This is safe only because:
+     *   - the table is an ordinary rowid table: id is TEXT PRIMARY KEY, which does not
+     *     alias rowid (only INTEGER PRIMARY KEY does), so every row — including rows
+     *     written by v1 of the app — has one.
+     *   - among rows simultaneously present, rowid order equals insertion order, and
+     *     this holds even after deletes: without AUTOINCREMENT, SQLite assigns
+     *     max(rowid)+1 over rows currently present, so a freed number can never rank a
+     *     new row below an older, still-present one.
+     * A later phase adding WITHOUT ROWID or an INTEGER PRIMARY KEY id would silently
+     * break both the running balance and pagination.
      */
     private void recomputeBalanceCache(SQLiteDatabase db) {
         db.execSQL(
