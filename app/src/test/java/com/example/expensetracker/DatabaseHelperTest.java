@@ -247,4 +247,27 @@ public class DatabaseHelperTest {
         }
     }
 
+    @Test
+    public void tiedTimestampsOrderAndAccumulateByInsertionOrder() {
+        db.insertTransaction("credit", 100.0, "A", "cash");
+        db.insertTransaction("debit",   40.0, "B", "cash");
+        db.insertTransaction("credit",  10.0, "C", "cash");
+
+        // Force an exact three-way dateTime tie — wall-clock inserts only hit this by luck.
+        db.getWritableDatabase().execSQL("UPDATE transactions SET dateTime = 1000");
+
+        // Any mutation re-runs the rebuild against the now-tied rows.
+        assertTrue(db.insertTransaction("credit", 1.0, "D", "cash"));
+
+        java.util.List<Transaction> all = db.getTransactions(0, 50);
+        assertEquals("D", all.get(0).getDescription());   // pins DIRECTION: newest first
+        assertEquals("C", all.get(1).getDescription());
+        assertEquals("B", all.get(2).getDescription());
+        assertEquals("A", all.get(3).getDescription());
+        assertEquals( 71.0, all.get(0).getBalanceAfterTransaction(), DELTA); // pins CONSISTENCY
+        assertEquals( 70.0, all.get(1).getBalanceAfterTransaction(), DELTA);
+        assertEquals( 60.0, all.get(2).getBalanceAfterTransaction(), DELTA);
+        assertEquals(100.0, all.get(3).getBalanceAfterTransaction(), DELTA);
+    }
+
 }
