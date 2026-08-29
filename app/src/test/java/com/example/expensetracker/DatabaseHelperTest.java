@@ -71,4 +71,18 @@ public class DatabaseHelperTest {
         assertEquals(0.0, db.getCashBalance(), DELTA);
         assertEquals(0.0, db.getBankBalance(), DELTA);
     }
+
+    @Test
+    public void insertRebuildsThePerRowBalanceCache() {
+        db.insertTransaction("credit", 1000.0, "Salary", "cash");
+        db.insertTransaction("debit", 400.0, "Groceries", "cash");
+        db.insertTransaction("credit", 100.0, "Refund", "cash");
+
+        // getTransactions is newest-first, so the running balances read 700, 600, 1000.
+        java.util.List<Transaction> all = db.getTransactions(0, 50);
+        assertEquals(3, all.size());
+        assertEquals(700.0, all.get(0).getBalanceAfterTransaction(), DELTA);
+        assertEquals(600.0, all.get(1).getBalanceAfterTransaction(), DELTA);
+        assertEquals(1000.0, all.get(2).getBalanceAfterTransaction(), DELTA);
+    }
 }

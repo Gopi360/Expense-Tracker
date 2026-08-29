@@ -61,30 +61,45 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // ─── INSERT ──────────────────────────────────────────────────────────────
 
     /**
-     * Insert a new transaction. Automatically calculates the new balance.
+     * Rebuilds the display-only balanceAfter column for every row, in one statement.
+     * Must be called inside an open database transaction, after the mutation.
+     * Nothing depends on this column for correctness — headline balances are computed.
+     */
+    private void recomputeBalanceCache(SQLiteDatabase db) {
+        db.execSQL(
+                "UPDATE " + TABLE + " SET " + COL_BALANCE + " = ("
+                        + "SELECT COALESCE(SUM(CASE WHEN t2." + COL_TYPE + " = 'credit'"
+                        + " THEN t2." + COL_AMOUNT + " ELSE -t2." + COL_AMOUNT + " END), 0)"
+                        + " FROM " + TABLE + " t2"
+                        + " WHERE t2." + COL_DATE + " <= " + TABLE + "." + COL_DATE + ")");
+    }
+
+    /**
+     * Insert a new transaction, then rebuild the balanceAfter display cache.
      * @param paymentMethod "cash" or "bank"
      * @return true if insert was successful
      */
     public boolean insertTransaction(String type, double amount, String description, String paymentMethod) {
         SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
         try {
-            double currentBalance = getBalanceInternal(db);
-            double newBalance = "credit".equals(type)
-                    ? currentBalance + amount
-                    : currentBalance - amount;
-
             ContentValues values = new ContentValues();
             values.put(COL_ID,      UUID.randomUUID().toString());
             values.put(COL_TYPE,    type);
             values.put(COL_AMOUNT,  amount);
             values.put(COL_DESC,    description);
             values.put(COL_DATE,    System.currentTimeMillis());
-            values.put(COL_BALANCE, newBalance);
+            values.put(COL_BALANCE, 0);   // placeholder; rebuilt below in the same transaction
             values.put(COL_PAYMENT, paymentMethod);
 
-            return db.insert(TABLE, null, values) != -1;
+            if (db.insert(TABLE, null, values) == -1) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
         } finally {
-            db.close();
+            db.endTransaction();
         }
     }
 
@@ -102,18 +117,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         } finally {
             cursor.close();
         }
-    }
-
-    private double getBalanceInternal(SQLiteDatabase db) {
-        Cursor cursor = db.rawQuery(
-                "SELECT " + COL_BALANCE + " FROM " + TABLE
-                        + " ORDER BY " + COL_DATE + " DESC LIMIT 1", null);
-        double balance = 0;
-        if (cursor.moveToFirst()) {
-            balance = cursor.getDouble(0);
-        }
-        cursor.close();
-        return balance;
     }
 
     /**
@@ -145,7 +148,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             }
         } finally {
             cursor.close();
-            db.close();
         }
         return list;
     }
@@ -156,11 +158,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public int getTotalCount() {
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE, null);
-        int count = 0;
-        if (cursor.moveToFirst()) count = cursor.getInt(0);
-        cursor.close();
-        db.close();
-        return count;
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            cursor.close();
+        }
     }
 
     /**
