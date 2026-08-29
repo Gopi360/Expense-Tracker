@@ -28,10 +28,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_BALANCE = "balanceAfter";
     private static final String COL_PAYMENT = "paymentMethod";
 
-    /** Signed sum of matching rows: credits add, debits subtract. COALESCE because SUM over zero rows is NULL. */
-    private static final String SQL_SIGNED_SUM =
-            "COALESCE(SUM(CASE WHEN " + COL_TYPE + " = 'credit' THEN " + COL_AMOUNT
-                    + " ELSE -" + COL_AMOUNT + " END), 0)";
+    /**
+     * Signed sum of matching rows: credits add, debits subtract.
+     * COALESCE because SUM over zero rows is NULL.
+     *
+     * @param qualifier table alias prefix ending in a dot (e.g. "t2."), or "" for an unqualified query
+     */
+    private static String signedSum(String qualifier) {
+        return "COALESCE(SUM(CASE WHEN " + qualifier + COL_TYPE + " = 'credit'"
+                + " THEN " + qualifier + COL_AMOUNT
+                + " ELSE -" + qualifier + COL_AMOUNT + " END), 0)";
+    }
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -68,8 +75,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private void recomputeBalanceCache(SQLiteDatabase db) {
         db.execSQL(
                 "UPDATE " + TABLE + " SET " + COL_BALANCE + " = ("
-                        + "SELECT COALESCE(SUM(CASE WHEN t2." + COL_TYPE + " = 'credit'"
-                        + " THEN t2." + COL_AMOUNT + " ELSE -t2." + COL_AMOUNT + " END), 0)"
+                        + "SELECT " + signedSum("t2.")
                         + " FROM " + TABLE + " t2"
                         + " WHERE t2." + COL_DATE + " <= " + TABLE + "." + COL_DATE + ")");
     }
@@ -111,7 +117,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      */
     public double getBalance() {
         SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.rawQuery("SELECT " + SQL_SIGNED_SUM + " FROM " + TABLE, null);
+        Cursor cursor = db.rawQuery("SELECT " + signedSum("") + " FROM " + TABLE, null);
         try {
             return cursor.moveToFirst() ? cursor.getDouble(0) : 0;
         } finally {
@@ -182,7 +188,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private double getBalanceByPaymentMethod(String paymentMethod) {
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery(
-                "SELECT " + SQL_SIGNED_SUM + " FROM " + TABLE
+                "SELECT " + signedSum("") + " FROM " + TABLE
                         + " WHERE COALESCE(" + COL_PAYMENT + ", 'cash') = ?",
                 new String[]{paymentMethod});
         try {
