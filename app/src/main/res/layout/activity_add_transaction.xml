@@ -57,6 +57,58 @@
                 android:paddingVertical="14dp"
                 android:layout_marginBottom="24dp" />
 
+            <!-- ── Type (edit mode only) ─────────────────────────────────── -->
+            <TextView
+                android:id="@+id/tvTypeSectionLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Type"
+                android:textSize="12sp"
+                android:textColor="#8B949E"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:visibility="gone"
+                android:layout_marginBottom="6dp"/>
+
+            <RadioGroup
+                android:id="@+id/rgType"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                android:layout_marginBottom="22dp">
+
+                <RadioButton
+                    android:id="@+id/rbCredit"
+                    android:layout_width="0dp"
+                    android:layout_height="54dp"
+                    android:layout_weight="1"
+                    android:text="▲  CREDIT"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@drawable/radio_button_text_color"
+                    android:fontFamily="monospace"
+                    android:background="@drawable/radio_button_selector"
+                    android:button="@null"
+                    android:gravity="center"
+                    android:layout_marginEnd="6dp"/>
+
+                <RadioButton
+                    android:id="@+id/rbDebit"
+                    android:layout_width="0dp"
+                    android:layout_height="54dp"
+                    android:layout_weight="1"
+                    android:text="▼  DEBIT"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@drawable/radio_button_text_color"
+                    android:fontFamily="monospace"
+                    android:background="@drawable/radio_button_selector"
+                    android:button="@null"
+                    android:gravity="center"
+                    android:layout_marginStart="6dp"/>
+            </RadioGroup>
+
             <!-- ── Amount ───────────────────────────────────────────────── -->
             <TextView
                 android:layout_width="wrap_content"
@@ -178,6 +230,19 @@
                 android:textSize="15sp"
                 android:backgroundTint="#1C2128"
                 android:textColor="#8B949E"
+                android:layout_marginTop="10dp" />
+
+            <!-- ── Delete Button (edit mode only) ────────────────────────── -->
+            <Button
+                android:id="@+id/btnDelete"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="DELETE TRANSACTION"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:backgroundTint="#2D0F0F"
+                android:textColor="#F85149"
+                android:visibility="gone"
                 android:layout_marginTop="10dp" />
 
         </LinearLayout>

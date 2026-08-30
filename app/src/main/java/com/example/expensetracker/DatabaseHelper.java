@@ -28,6 +28,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_BALANCE = "balanceAfter";
     private static final String COL_PAYMENT = "paymentMethod";
 
+    /**
+     * Signed sum of matching rows: credits add, debits subtract.
+     * COALESCE because SUM over zero rows is NULL.
+     *
+     * @param qualifier table alias prefix ending in a dot (e.g. "t2."), or "" for an unqualified query
+     */
+    private static String signedSum(String qualifier) {
+        return "COALESCE(SUM(CASE WHEN " + qualifier + COL_TYPE + " = 'credit'"
+                + " THEN " + qualifier + COL_AMOUNT
+                + " ELSE -" + qualifier + COL_AMOUNT + " END), 0)";
+    }
+
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
     }
@@ -56,57 +68,131 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // ─── INSERT ──────────────────────────────────────────────────────────────
 
     /**
-     * Insert a new transaction. Automatically calculates the new balance.
+     * Rebuilds the display-only balanceAfter column for every row, in one statement.
+     * Must be called inside an open database transaction, after the mutation.
+     * Nothing depends on this column for correctness — headline balances are computed.
+     *
+     * Both this method's correlation and getTransactions' ORDER BY break dateTime ties
+     * with the bare SQLite keyword rowid (not a COL_* constant — it is not a schema
+     * column). This is safe only because:
+     *   - the table is an ordinary rowid table: id is TEXT PRIMARY KEY, which does not
+     *     alias rowid (only INTEGER PRIMARY KEY does), so every row — including rows
+     *     written by v1 of the app — has one.
+     *   - among rows simultaneously present, rowid order equals insertion order, and
+     *     this holds even after deletes: without AUTOINCREMENT, SQLite assigns
+     *     max(rowid)+1 over rows currently present, so a freed number can never rank a
+     *     new row below an older, still-present one.
+     * A later phase adding WITHOUT ROWID or an INTEGER PRIMARY KEY id would silently
+     * break both the running balance and pagination.
+     */
+    private void recomputeBalanceCache(SQLiteDatabase db) {
+        db.execSQL(
+                "UPDATE " + TABLE + " SET " + COL_BALANCE + " = ("
+                        + "SELECT " + signedSum("t2.")
+                        + " FROM " + TABLE + " t2"
+                        + " WHERE t2." + COL_DATE + " < " + TABLE + "." + COL_DATE
+                        + " OR (t2." + COL_DATE + " = " + TABLE + "." + COL_DATE
+                        + " AND t2.rowid <= " + TABLE + ".rowid))");
+    }
+
+    /**
+     * Insert a new transaction, then rebuild the balanceAfter display cache.
      * @param paymentMethod "cash" or "bank"
      * @return true if insert was successful
      */
     public boolean insertTransaction(String type, double amount, String description, String paymentMethod) {
         SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
         try {
-            double currentBalance = getBalanceInternal(db);
-            double newBalance = "credit".equals(type)
-                    ? currentBalance + amount
-                    : currentBalance - amount;
-
             ContentValues values = new ContentValues();
             values.put(COL_ID,      UUID.randomUUID().toString());
             values.put(COL_TYPE,    type);
             values.put(COL_AMOUNT,  amount);
             values.put(COL_DESC,    description);
             values.put(COL_DATE,    System.currentTimeMillis());
-            values.put(COL_BALANCE, newBalance);
+            values.put(COL_BALANCE, 0);   // placeholder; rebuilt below in the same transaction
             values.put(COL_PAYMENT, paymentMethod);
 
-            return db.insert(TABLE, null, values) != -1;
+            if (db.insert(TABLE, null, values) == -1) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
         } finally {
-            db.close();
+            db.endTransaction();
+        }
+    }
+
+    // ─── UPDATE ──────────────────────────────────────────────────────────────
+
+    /**
+     * Updates an existing transaction in place, then rebuilds the balance cache.
+     * dateTime is deliberately preserved so the row keeps its position in history.
+     *
+     * @return true if a row with this id existed and was updated
+     */
+    public boolean updateTransaction(String id, String type, double amount,
+                                     String description, String paymentMethod) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            ContentValues values = new ContentValues();
+            values.put(COL_TYPE,    type);
+            values.put(COL_AMOUNT,  amount);
+            values.put(COL_DESC,    description);
+            values.put(COL_PAYMENT, paymentMethod);
+
+            int rows = db.update(TABLE, values, COL_ID + " = ?", new String[]{id});
+            if (rows == 0) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    // ─── DELETE ──────────────────────────────────────────────────────────────
+
+    /**
+     * Permanently removes a transaction, then rebuilds the balance cache.
+     * There is no undo — callers must confirm with the user first.
+     *
+     * @return true if a row with this id existed and was removed
+     */
+    public boolean deleteTransaction(String id) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int rows = db.delete(TABLE, COL_ID + " = ?", new String[]{id});
+            if (rows == 0) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
         }
     }
 
     // ─── QUERY ───────────────────────────────────────────────────────────────
 
     /**
-     * Returns the current balance (balance after the most recent transaction).
+     * Returns the current total balance, computed from every row.
+     * Never reads the balanceAfter cache — that column is display-only.
      */
     public double getBalance() {
         SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery("SELECT " + signedSum("") + " FROM " + TABLE, null);
         try {
-            return getBalanceInternal(db);
+            return cursor.moveToFirst() ? cursor.getDouble(0) : 0;
         } finally {
-            db.close();
+            cursor.close();
         }
-    }
-
-    private double getBalanceInternal(SQLiteDatabase db) {
-        Cursor cursor = db.rawQuery(
-                "SELECT " + COL_BALANCE + " FROM " + TABLE
-                        + " ORDER BY " + COL_DATE + " DESC LIMIT 1", null);
-        double balance = 0;
-        if (cursor.moveToFirst()) {
-            balance = cursor.getDouble(0);
-        }
-        cursor.close();
-        return balance;
     }
 
     /**
@@ -119,28 +205,46 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery(
                 "SELECT * FROM " + TABLE
-                        + " ORDER BY " + COL_DATE + " DESC"
+                        + " ORDER BY " + COL_DATE + " DESC, rowid DESC"
                         + " LIMIT " + limit + " OFFSET " + offset, null);
         try {
             while (cursor.moveToNext()) {
-                String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
-                if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
-                
-                list.add(new Transaction(
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
-                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
-                        cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
-                        cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
-                        cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
-                        paymentMethod
-                ));
+                list.add(cursorToTransaction(cursor));
             }
         } finally {
             cursor.close();
-            db.close();
         }
         return list;
+    }
+
+    /** Maps the row at the cursor's current position. Assumes the SELECT * column set. */
+    private Transaction cursorToTransaction(Cursor cursor) {
+        String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
+        if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
+
+        return new Transaction(
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
+                cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
+                paymentMethod
+        );
+    }
+
+    /**
+     * Returns the transaction with the given id, or null if there is no such row.
+     */
+    public Transaction getTransaction(String id) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT * FROM " + TABLE + " WHERE " + COL_ID + " = ?", new String[]{id});
+        try {
+            return cursor.moveToFirst() ? cursorToTransaction(cursor) : null;
+        } finally {
+            cursor.close();
+        }
     }
 
     /**
@@ -149,11 +253,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public int getTotalCount() {
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE, null);
-        int count = 0;
-        if (cursor.moveToFirst()) count = cursor.getInt(0);
-        cursor.close();
-        db.close();
-        return count;
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            cursor.close();
+        }
     }
 
     /**
@@ -172,30 +276,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private double getBalanceByPaymentMethod(String paymentMethod) {
         SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT " + signedSum("") + " FROM " + TABLE
+                        + " WHERE COALESCE(" + COL_PAYMENT + ", 'cash') = ?",
+                new String[]{paymentMethod});
         try {
-            // Calculate balance: sum of credits minus sum of debits
-            Cursor cursor = db.rawQuery(
-                    "SELECT " + COL_TYPE + ", SUM(" + COL_AMOUNT + ") FROM " + TABLE
-                            + " WHERE " + COL_PAYMENT + " = ?"
-                            + " GROUP BY " + COL_TYPE,
-                    new String[]{paymentMethod});
-            
-            double credits = 0;
-            double debits = 0;
-            
-            while (cursor.moveToNext()) {
-                String type = cursor.getString(0);
-                double sum = cursor.getDouble(1);
-                if ("credit".equals(type)) {
-                    credits = sum;
-                } else if ("debit".equals(type)) {
-                    debits = sum;
-                }
-            }
-            cursor.close();
-            return credits - debits;
+            return cursor.moveToFirst() ? cursor.getDouble(0) : 0;
         } finally {
-            db.close();
+            cursor.close();
         }
     }
 }

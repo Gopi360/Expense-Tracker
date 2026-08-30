@@ -22,12 +22,23 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
     private static final int COLOR_CREDIT_BG   = 0xFF0D1A0D;  // very dark green tint
     private static final int COLOR_DIVIDER     = 0xFF30363D;  // dark border
 
+    /** Callback for taps on a row. */
+    public interface OnTransactionClickListener {
+        void onTransactionClick(Transaction transaction);
+    }
+
     private final List<Transaction> transactions;
+    private final OnTransactionClickListener clickListener;
     private final SimpleDateFormat sdf =
             new SimpleDateFormat("dd MMM\nhh:mm a", Locale.getDefault());
 
     public TransactionAdapter(List<Transaction> transactions) {
-        this.transactions = transactions;
+        this(transactions, null);
+    }
+
+    public TransactionAdapter(List<Transaction> transactions, OnTransactionClickListener clickListener) {
+        this.transactions   = transactions;
+        this.clickListener  = clickListener;
     }
 
     @NonNull
@@ -64,6 +75,10 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
             h.tvAmount.setTextColor(COLOR_DEBIT_TEXT);
             h.itemView.setBackgroundColor(COLOR_DEBIT_BG);
         }
+
+        if (clickListener != null) {
+            h.itemView.setOnClickListener(v -> clickListener.onTransactionClick(t));
+        }
     }
 
     @Override
@@ -75,6 +90,13 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
         int start = transactions.size();
         transactions.addAll(more);
         notifyItemRangeInserted(start, more.size());
+    }
+
+    /** Drops every row. Used when the list is reloaded from the first page. */
+    public void clear() {
+        int removed = transactions.size();
+        transactions.clear();
+        notifyItemRangeRemoved(0, removed);
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {

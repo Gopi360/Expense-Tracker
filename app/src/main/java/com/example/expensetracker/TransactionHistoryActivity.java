@@ -1,5 +1,6 @@
 package com.example.expensetracker;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -35,7 +36,7 @@ public class TransactionHistoryActivity extends AppCompatActivity {
 
         dbHelper   = new DatabaseHelper(this);
         allLoaded  = new ArrayList<>();
-        adapter    = new TransactionAdapter(allLoaded);
+        adapter    = new TransactionAdapter(allLoaded, this::openForEdit);
 
         recyclerView = findViewById(R.id.recyclerView);
         btnLoadMore  = findViewById(R.id.btnLoadMore);
@@ -50,9 +51,25 @@ public class TransactionHistoryActivity extends AppCompatActivity {
 
         // Load More button
         btnLoadMore.setOnClickListener(v -> loadNextPage());
+    }
 
-        // Initial load
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // A transaction may have been edited or deleted while we were away.
+        reloadFromStart();
+    }
+
+    private void reloadFromStart() {
+        adapter.clear();
+        currentOffset = 0;
         loadNextPage();
+    }
+
+    private void openForEdit(Transaction transaction) {
+        Intent intent = new Intent(this, AddTransactionActivity.class);
+        intent.putExtra("transactionId", transaction.getId());
+        startActivity(intent);
     }
 
     private void loadNextPage() {
