@@ -290,7 +290,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      * Permanently removes both legs of a transfer, then rebuilds the cache.
      * There is no undo — callers must confirm with the user first.
      *
-     * @return true if the transfer existed and was removed
+     * The delete matches every row sharing transferId, however many that turns out
+     * to be. rows == 0 means no such transfer ever existed, so that's the only
+     * failure case. A 1-row result means the transfer was already an orphan (its
+     * partner leg missing — currently unreachable from the UI, see
+     * anOrphanedLegDegradesToAnOrdinaryRow) and is deliberately treated as success:
+     * removing the broken leftover row is exactly what the caller wants. This is
+     * NOT the same rule as updateTransfer, which requires both legs and rolls back
+     * otherwise — a partial update would commit an actively inconsistent pair (one
+     * leg with the new amount, one with the old), whereas a partial delete leaves
+     * nothing behind to be inconsistent. Do not "fix" this to require rows == 2;
+     * that would make an orphaned row undeletable, permanently stranding the user
+     * with a corrupt ₹0.00 entry.
+     *
+     * @return true if the transfer existed (one or both legs) and was removed
      */
     public boolean deleteTransfer(String transferId) {
         SQLiteDatabase db = this.getWritableDatabase();

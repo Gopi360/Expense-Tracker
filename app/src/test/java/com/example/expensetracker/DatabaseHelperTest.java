@@ -582,4 +582,24 @@ public class DatabaseHelperTest {
         assertEquals(2000.0, db.getBankBalance(), DELTA);
     }
 
+    @Test
+    public void deletingAnOrphanedTransferSucceedsAndClearsIt() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+        // Orphan it the same way anOrphanedLegDegradesToAnOrdinaryRow does: raw SQL,
+        // bypassing the guards, so only the debit leg survives.
+        db.getWritableDatabase().execSQL(
+                "DELETE FROM transactions WHERE transferId = ? AND type = 'credit'",
+                new Object[]{transferId});
+
+        assertTrue("removing the broken leftover row is the desired outcome, not a failure",
+                db.deleteTransfer(transferId));
+
+        assertEquals(1, db.getTotalCount());
+        assertEquals(5000.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
+    }
+
 }
