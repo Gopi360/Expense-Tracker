@@ -1,7 +1,7 @@
 # Phase 2 — Cash ↔ Bank Transfer
 
 **Date:** 2026-08-31
-**Status:** Design approved in conversation. Awaiting written-spec review.
+**Status:** Approved 2026-08-31. Ready for implementation planning.
 **Roadmap:** `2026-08-26-expense-tracker-roadmap.md`
 **Depends on:** Phase 1 (`2026-08-26-transaction-edit-delete-design.md`), complete and merged.
 
