@@ -21,6 +21,8 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
     private static final int COLOR_DEBIT_BG    = 0xFF1A0D0D;  // very dark red tint
     private static final int COLOR_CREDIT_BG   = 0xFF0D1A0D;  // very dark green tint
     private static final int COLOR_DIVIDER     = 0xFF30363D;  // dark border
+    private static final int COLOR_TRANSFER_TEXT = 0xFF00D4AA;  // teal — neither income nor expense
+    private static final int COLOR_TRANSFER_BG   = 0xFF0D1A1A;  // very dark teal tint
 
     /** Callback for taps on a row. */
     public interface OnTransactionClickListener {
@@ -58,22 +60,30 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
         h.tvDescription.setText(t.getDescription());
         h.tvBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", t.getBalanceAfterTransaction()));
 
-        // Set payment method icon
-        String paymentIcon = "cash".equals(t.getPaymentMethod()) ? "💵" : "🏦";
-        h.tvPaymentMethod.setText(" • " + paymentIcon);
-
-        if (isCredit) {
+        if (t.isTransfer()) {
+            // A transfer moves money without earning or spending it, so it gets
+            // neither a sign nor a red/green colour.
+            h.tvType.setText("⇄ TRANSFER");
+            h.tvAmount.setText(String.format(Locale.getDefault(), "₹%.2f", t.getAmount()));
+            h.tvType.setTextColor(COLOR_TRANSFER_TEXT);
+            h.tvAmount.setTextColor(COLOR_TRANSFER_TEXT);
+            h.itemView.setBackgroundColor(COLOR_TRANSFER_BG);
+            h.tvPaymentMethod.setText(" • " + methodIcon(t.getFromMethod())
+                    + " → " + methodIcon(t.getToMethod()));
+        } else if (isCredit) {
             h.tvType.setText("▲ CREDIT");
             h.tvAmount.setText(String.format(Locale.getDefault(), "+ ₹%.2f", t.getAmount()));
             h.tvType.setTextColor(COLOR_CREDIT_TEXT);
             h.tvAmount.setTextColor(COLOR_CREDIT_TEXT);
             h.itemView.setBackgroundColor(COLOR_CREDIT_BG);
+            h.tvPaymentMethod.setText(" • " + methodIcon(t.getPaymentMethod()));
         } else {
             h.tvType.setText("▼ DEBIT");
             h.tvAmount.setText(String.format(Locale.getDefault(), "- ₹%.2f", t.getAmount()));
             h.tvType.setTextColor(COLOR_DEBIT_TEXT);
             h.tvAmount.setTextColor(COLOR_DEBIT_TEXT);
             h.itemView.setBackgroundColor(COLOR_DEBIT_BG);
+            h.tvPaymentMethod.setText(" • " + methodIcon(t.getPaymentMethod()));
         }
 
         if (clickListener != null) {
@@ -84,6 +94,10 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
     @Override
     public int getItemCount() {
         return transactions.size();
+    }
+
+    private static String methodIcon(String paymentMethod) {
+        return "cash".equals(paymentMethod) ? "💵" : "🏦";
     }
 
     public void addAll(List<Transaction> more) {
