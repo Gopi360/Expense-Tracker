@@ -608,9 +608,16 @@ Add to `DatabaseHelper.java`, near `signedSum`:
      * worth the saved characters.
      *
      * amount, description and dateTime are written identically to both legs, so
-     * MAX() over them is exact rather than approximate. fromMethod and toMethod are
-     * NULL for a group of one, which is how a caller tells a transfer from an
-     * ordinary row without a second query.
+     * MAX() over them is exact rather than approximate.
+     *
+     * The direction pair is guarded on transferId, not just on type. Without that
+     * guard an ordinary debit row would report fromMethod = its own paymentMethod,
+     * because it matches the type arm on its own — leaving every plain expense
+     * carrying half a direction it has no business having. Guarded, both are NULL
+     * for any non-transfer row, which is how a caller tells a transfer from an
+     * ordinary row without a second query. The guard tests transferId rather than
+     * kind so that kind stays write-only in this phase, as the spec's Risks
+     * section states.
      *
      * The running balance is read from the credit leg, which is the post-transfer
      * figure only because insertTransfer always writes the debit leg first.
@@ -625,8 +632,10 @@ Add to `DatabaseHelper.java`, near `signedSum`:
             + "MAX(t." + COL_PAYMENT + ") AS " + COL_PAYMENT + ", "
             + "MAX(t." + COL_KIND + ")    AS " + COL_KIND + ", "
             + "MAX(t." + COL_TRANSFERID + ") AS " + COL_TRANSFERID + ", "
-            + "MAX(CASE WHEN t." + COL_TYPE + " = 'debit'  THEN t." + COL_PAYMENT + " END) AS fromMethod, "
-            + "MAX(CASE WHEN t." + COL_TYPE + " = 'credit' THEN t." + COL_PAYMENT + " END) AS toMethod, "
+            + "MAX(CASE WHEN t." + COL_TRANSFERID + " IS NOT NULL AND t." + COL_TYPE + " = 'debit'  "
+            + "          THEN t." + COL_PAYMENT + " END) AS fromMethod, "
+            + "MAX(CASE WHEN t." + COL_TRANSFERID + " IS NOT NULL AND t." + COL_TYPE + " = 'credit' "
+            + "          THEN t." + COL_PAYMENT + " END) AS toMethod, "
             + "CASE WHEN MAX(t." + COL_TRANSFERID + ") IS NULL "
             + "     THEN MAX(t." + COL_BALANCE + ") "
             + "     ELSE MAX(CASE WHEN t." + COL_TYPE + " = 'credit' THEN t." + COL_BALANCE + " END) "
@@ -747,6 +756,37 @@ Expected: PASS, 33 tests in `DatabaseHelperTest` plus `ExampleUnitTest`.
 > ```
 >
 > This needs `import android.database.Cursor;` in the test file.
+
+> **`aTransferWritesTwoTaggedLegsSharingOneId` (Task 3) fails for the same reason** — it
+> asserts the pre-collapse two-row shape through `getTransactions`. Rewrite it to read the
+> legs directly, keeping every property it originally pinned:
+>
+> ```java
+>     @Test
+>     public void aTransferWritesTwoTaggedLegsSharingOneId() {
+>         db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+>
+>         // Read the legs directly — getTransactions now collapses them into one row.
+>         Cursor c = db.getReadableDatabase().rawQuery(
+>                 "SELECT kind, transferId, dateTime FROM transactions ORDER BY rowid ASC", null);
+>         try {
+>             assertEquals("two legs on disk", 2, c.getCount());
+>
+>             c.moveToNext();
+>             String kindA = c.getString(0), transferIdA = c.getString(1);
+>             long dateTimeA = c.getLong(2);
+>             c.moveToNext();
+>
+>             assertEquals(DatabaseHelper.KIND_TRANSFER, kindA);
+>             assertEquals(DatabaseHelper.KIND_TRANSFER, c.getString(0));
+>             assertNotNull(transferIdA);
+>             assertEquals("both legs share one transferId", transferIdA, c.getString(1));
+>             assertEquals("both legs share one timestamp", dateTimeA, c.getLong(2));
+>         } finally {
+>             c.close();
+>         }
+>     }
+> ```
 
 - [ ] **Step 5: Commit**
 
