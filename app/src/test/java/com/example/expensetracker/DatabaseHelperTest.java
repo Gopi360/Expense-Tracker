@@ -7,9 +7,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -340,30 +344,144 @@ public class DatabaseHelperTest {
     public void aTransferWritesTwoTaggedLegsSharingOneId() {
         db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
 
-        List<Transaction> rows = db.getTransactions(0, 10);
-        assertEquals("two legs on disk before grouping lands", 2, rows.size());
+        // Read the legs directly — getTransactions now collapses them into one row.
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT kind, transferId, dateTime FROM transactions ORDER BY rowid ASC", null);
+        try {
+            assertEquals("two legs on disk", 2, c.getCount());
 
-        for (Transaction row : rows) {
-            assertEquals(DatabaseHelper.KIND_TRANSFER, row.getKind());
-            assertNotNull(row.getTransferId());
+            c.moveToNext();
+            String kindA = c.getString(0), transferIdA = c.getString(1);
+            long dateTimeA = c.getLong(2);
+            c.moveToNext();
+
+            assertEquals(DatabaseHelper.KIND_TRANSFER, kindA);
+            assertEquals(DatabaseHelper.KIND_TRANSFER, c.getString(0));
+            assertNotNull(transferIdA);
+            assertEquals("both legs share one transferId", transferIdA, c.getString(1));
+            assertEquals("both legs share one timestamp", dateTimeA, c.getLong(2));
+        } finally {
+            c.close();
         }
-        assertEquals("both legs share one transferId",
-                rows.get(0).getTransferId(), rows.get(1).getTransferId());
-        assertEquals("both legs share one timestamp",
-                rows.get(0).getDateTime(), rows.get(1).getDateTime());
     }
 
     @Test
     public void theCreditLegIsTheLaterOfTheTwo() {
-        // Load-bearing: the collapsed history row reads its running balance from
-        // the credit leg, which is only the post-transfer figure if that leg is
-        // the later one. getTransactions returns newest-first, so index 0 here.
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT type FROM transactions ORDER BY rowid ASC", null);
+        try {
+            c.moveToNext();
+            assertEquals("debit leg must be written first", "debit", c.getString(0));
+            c.moveToNext();
+            assertEquals("credit leg must be written second", "credit", c.getString(0));
+        } finally {
+            c.close();
+        }
+    }
+
+    @Test
+    public void historyCollapsesATransferIntoOneRow() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
         db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
 
         List<Transaction> rows = db.getTransactions(0, 10);
-        assertEquals("credit leg must sort first when newest-first",
-                "credit", rows.get(0).getType());
-        assertEquals("debit", rows.get(1).getType());
+
+        assertEquals("one salary row plus one transfer row", 2, rows.size());
+        Transaction transfer = rows.get(0);
+        assertTrue(transfer.isTransfer());
+        assertEquals(2000.0, transfer.getAmount(), DELTA);
+        assertEquals("Move to savings", transfer.getDescription());
+        assertEquals("cash", transfer.getFromMethod());
+        assertEquals("bank", transfer.getToMethod());
+    }
+
+    @Test
+    public void aCollapsedTransferShowsThePostTransferBalance() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Transaction transfer = db.getTransactions(0, 10).get(0);
+
+        // A transfer nets to zero, so the running balance is unchanged by it.
+        assertEquals(5000.0, transfer.getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void aCollapsedTransferIsIdentifiedByItsTransferId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Transaction transfer = db.getTransactions(0, 10).get(0);
+
+        assertNotNull(transfer.getTransferId());
+        assertEquals("the collapsed row is keyed by transferId, not a leg id",
+                transfer.getTransferId(), transfer.getId());
+    }
+
+    @Test
+    public void getTotalCountCountsATransferAsOne() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals("two legs are one history entry", 2, db.getTotalCount());
+    }
+
+    @Test
+    public void paginationAcrossATransferNeitherSkipsNorDuplicates() {
+        // Three entries, one of which is a transfer, read one page at a time.
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        db.insertTransaction("debit", 250.0, "Chai", "cash");
+
+        List<Transaction> all = new ArrayList<>();
+        for (int offset = 0; offset < db.getTotalCount(); offset += 1) {
+            all.addAll(db.getTransactions(offset, 1));
+        }
+
+        assertEquals(3, all.size());
+        Set<String> ids = new HashSet<>();
+        for (Transaction t : all) {
+            assertTrue("no id may repeat across pages", ids.add(t.getId()));
+        }
+        assertEquals("paged reads must match a single unpaged read",
+                db.getTransactions(0, 100).size(), all.size());
+    }
+
+    @Test
+    public void getTransferLoadsATransferByItsId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        Transaction loaded = db.getTransfer(transferId);
+
+        assertNotNull(loaded);
+        assertEquals(2000.0, loaded.getAmount(), DELTA);
+        assertEquals("cash", loaded.getFromMethod());
+        assertEquals("bank", loaded.getToMethod());
+    }
+
+    @Test
+    public void getTransferOnUnknownIdReturnsNull() {
+        assertNull(db.getTransfer("no-such-transfer"));
+    }
+
+    @Test
+    public void anOrphanedLegDegradesToAnOrdinaryRow() {
+        // Reachable only through a bug or a manual database edit. It must not
+        // crash the read path or render "cash -> null".
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+        db.getWritableDatabase().execSQL(
+                "DELETE FROM transactions WHERE transferId = ? AND type = 'credit'",
+                new Object[]{transferId});
+
+        List<Transaction> rows = db.getTransactions(0, 10);
+
+        assertEquals(1, rows.size());
+        assertFalse("a lone leg is not a complete transfer", rows.get(0).isTransfer());
+        assertEquals("debit", rows.get(0).getType());
+        assertEquals("cash", rows.get(0).getPaymentMethod());
     }
 
 }

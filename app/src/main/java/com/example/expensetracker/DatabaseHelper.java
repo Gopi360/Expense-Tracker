@@ -47,6 +47,52 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + " ELSE -" + qualifier + COL_AMOUNT + " END), 0)";
     }
 
+    /**
+     * One history entry per user action: an ordinary row is a group of one, a
+     * transfer is its two legs collapsed into a single row.
+     *
+     * Every column is wrapped in an aggregate on purpose. SQLite has a documented
+     * extension where a bare column selected alongside MAX() takes its value from
+     * the matching row, which would express some of this more briefly — but relying
+     * on a dialect extension to pick which row a money figure comes from is not
+     * worth the saved characters.
+     *
+     * amount, description and dateTime are written identically to both legs, so
+     * MAX() over them is exact rather than approximate.
+     *
+     * The direction pair is guarded on transferId, not just on type. Without that
+     * guard an ordinary debit row would report fromMethod = its own paymentMethod,
+     * because it matches the type arm on its own — leaving every plain expense
+     * carrying half a direction it has no business having. Guarded, both are NULL
+     * for any non-transfer row, which is how a caller tells a transfer from an
+     * ordinary row without a second query. The guard tests transferId rather than
+     * kind so that kind stays write-only in this phase, as the spec's Risks
+     * section states.
+     *
+     * The running balance is read from the credit leg, which is the post-transfer
+     * figure only because insertTransfer always writes the debit leg first.
+     */
+    private static final String GROUPED_SELECT =
+            "SELECT "
+            + "COALESCE(t." + COL_TRANSFERID + ", t." + COL_ID + ") AS " + COL_ID + ", "
+            + "MAX(t." + COL_TYPE + ")    AS " + COL_TYPE + ", "
+            + "MAX(t." + COL_AMOUNT + ")  AS " + COL_AMOUNT + ", "
+            + "MAX(t." + COL_DESC + ")    AS " + COL_DESC + ", "
+            + "MAX(t." + COL_DATE + ")    AS " + COL_DATE + ", "
+            + "MAX(t." + COL_PAYMENT + ") AS " + COL_PAYMENT + ", "
+            + "MAX(t." + COL_KIND + ")    AS " + COL_KIND + ", "
+            + "MAX(t." + COL_TRANSFERID + ") AS " + COL_TRANSFERID + ", "
+            + "MAX(CASE WHEN t." + COL_TRANSFERID + " IS NOT NULL AND t." + COL_TYPE + " = 'debit'  "
+            + "          THEN t." + COL_PAYMENT + " END) AS fromMethod, "
+            + "MAX(CASE WHEN t." + COL_TRANSFERID + " IS NOT NULL AND t." + COL_TYPE + " = 'credit' "
+            + "          THEN t." + COL_PAYMENT + " END) AS toMethod, "
+            + "CASE WHEN MAX(t." + COL_TRANSFERID + ") IS NULL "
+            + "     THEN MAX(t." + COL_BALANCE + ") "
+            + "     ELSE MAX(CASE WHEN t." + COL_TYPE + " = 'credit' THEN t." + COL_BALANCE + " END) "
+            + "END AS " + COL_BALANCE + " "
+            + "FROM " + TABLE + " t "
+            + "GROUP BY COALESCE(t." + COL_TRANSFERID + ", t." + COL_ID + ")";
+
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
     }
@@ -280,12 +326,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         List<Transaction> list = new ArrayList<>();
         SQLiteDatabase db = this.getReadableDatabase();
         Cursor cursor = db.rawQuery(
-                "SELECT * FROM " + TABLE
-                        + " ORDER BY " + COL_DATE + " DESC, rowid DESC"
+                GROUPED_SELECT
+                        + " ORDER BY MAX(t." + COL_DATE + ") DESC, MAX(t.rowid) DESC"
                         + " LIMIT " + limit + " OFFSET " + offset, null);
         try {
             while (cursor.moveToNext()) {
-                list.add(cursorToTransaction(cursor));
+                list.add(cursorToGroupedTransaction(cursor));
             }
         } finally {
             cursor.close();
@@ -313,6 +359,43 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         );
     }
 
+    /** Maps a row of GROUPED_SELECT. Distinct from cursorToTransaction, whose
+     *  SELECT * has no fromMethod/toMethod columns to read. */
+    private Transaction cursorToGroupedTransaction(Cursor cursor) {
+        String paymentMethod = cursor.getString(cursor.getColumnIndexOrThrow(COL_PAYMENT));
+        if (paymentMethod == null) paymentMethod = "cash"; // Default for old records
+
+        return new Transaction(
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_ID)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_TYPE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_AMOUNT)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
+                cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
+                cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
+                paymentMethod,
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_KIND)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_TRANSFERID)),
+                cursor.getString(cursor.getColumnIndexOrThrow("fromMethod")),
+                cursor.getString(cursor.getColumnIndexOrThrow("toMethod"))
+        );
+    }
+
+    /**
+     * Returns a transfer as one collapsed row, or null if there is no such transfer.
+     * Used by the edit form to prefill.
+     */
+    public Transaction getTransfer(String transferId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                GROUPED_SELECT + " HAVING MAX(t." + COL_TRANSFERID + ") = ?",
+                new String[]{transferId});
+        try {
+            return cursor.moveToFirst() ? cursorToGroupedTransaction(cursor) : null;
+        } finally {
+            cursor.close();
+        }
+    }
+
     /**
      * Returns the transaction with the given id, or null if there is no such row.
      */
@@ -332,7 +415,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      */
     public int getTotalCount() {
         SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM " + TABLE, null);
+        Cursor cursor = db.rawQuery(
+                "SELECT COUNT(*) FROM (SELECT 1 FROM " + TABLE
+                        + " GROUP BY COALESCE(" + COL_TRANSFERID + ", " + COL_ID + "))", null);
         try {
             return cursor.moveToFirst() ? cursor.getInt(0) : 0;
         } finally {
