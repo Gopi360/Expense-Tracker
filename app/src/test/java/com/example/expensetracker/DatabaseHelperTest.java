@@ -302,4 +302,16 @@ public class DatabaseHelperTest {
         assertNull(db.getTransaction("a").getTransferId());
     }
 
+    @Test
+    public void anOrdinaryRowReportsItselfAsNormalAndUnpaired() {
+        db.insertTransaction("debit", 250.0, "Chai", "cash");
+
+        Transaction t = db.getTransactions(0, 10).get(0);
+
+        assertEquals(DatabaseHelper.KIND_NORMAL, t.getKind());
+        assertNull(t.getTransferId());
+        assertNull("a single row has no direction", t.getFromMethod());
+        assertNull("a single row has no direction", t.getToMethod());
+    }
+
 }

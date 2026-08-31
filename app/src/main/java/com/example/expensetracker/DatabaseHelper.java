@@ -245,7 +245,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 cursor.getString(cursor.getColumnIndexOrThrow(COL_DESC)),
                 cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATE)),
                 cursor.getDouble(cursor.getColumnIndexOrThrow(COL_BALANCE)),
-                paymentMethod
+                paymentMethod,
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_KIND)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COL_TRANSFERID)),
+                null,   // direction is only knowable from the grouped query
+                null
         );
     }
 
