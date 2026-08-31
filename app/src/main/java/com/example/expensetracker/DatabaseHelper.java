@@ -246,6 +246,68 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return db.insert(TABLE, null, values) != -1;
     }
 
+    /**
+     * Rewrites both legs of a transfer in place, then rebuilds the cache.
+     *
+     * Reversing direction is a swap of paymentMethod between the two legs, never a
+     * delete-and-reinsert — so rowids survive, and with them both the row's position
+     * in history and insertTransfer's debit-before-credit ordering guarantee.
+     * dateTime is preserved, matching updateTransaction.
+     *
+     * @return true only if both legs were found and updated
+     */
+    public boolean updateTransfer(String transferId, double amount, String description,
+                                  String fromMethod, String toMethod) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int out = updateLeg(db, transferId, "debit",  amount, description, fromMethod);
+            int in  = updateLeg(db, transferId, "credit", amount, description, toMethod);
+            if (out == 0 || in == 0) {
+                return false;   // rolled back: setTransactionSuccessful not reached
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    /** Updates one leg of a transfer. Callers must already hold a database transaction. */
+    private int updateLeg(SQLiteDatabase db, String transferId, String type,
+                          double amount, String description, String paymentMethod) {
+        ContentValues values = new ContentValues();
+        values.put(COL_AMOUNT,  amount);
+        values.put(COL_DESC,    description);
+        values.put(COL_PAYMENT, paymentMethod);
+        return db.update(TABLE, values,
+                COL_TRANSFERID + " = ? AND " + COL_TYPE + " = ?",
+                new String[]{transferId, type});
+    }
+
+    /**
+     * Permanently removes both legs of a transfer, then rebuilds the cache.
+     * There is no undo — callers must confirm with the user first.
+     *
+     * @return true if the transfer existed and was removed
+     */
+    public boolean deleteTransfer(String transferId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int rows = db.delete(TABLE, COL_TRANSFERID + " = ?", new String[]{transferId});
+            if (rows == 0) {
+                return false;
+            }
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     // ─── UPDATE ──────────────────────────────────────────────────────────────
 
     /**
@@ -265,7 +327,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             values.put(COL_DESC,    description);
             values.put(COL_PAYMENT, paymentMethod);
 
-            int rows = db.update(TABLE, values, COL_ID + " = ?", new String[]{id});
+            // "AND transferId IS NULL" is a guard, not a filter: editing a single leg
+            // of a transfer would silently orphan its partner and leave both cash and
+            // bank wrong. Transfers are edited through updateTransfer.
+            int rows = db.update(TABLE, values,
+                    COL_ID + " = ? AND " + COL_TRANSFERID + " IS NULL",
+                    new String[]{id});
             if (rows == 0) {
                 return false;
             }
@@ -289,7 +356,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getWritableDatabase();
         db.beginTransaction();
         try {
-            int rows = db.delete(TABLE, COL_ID + " = ?", new String[]{id});
+            // Guard: see updateTransaction. Transfers are deleted through deleteTransfer.
+            int rows = db.delete(TABLE,
+                    COL_ID + " = ? AND " + COL_TRANSFERID + " IS NULL",
+                    new String[]{id});
             if (rows == 0) {
                 return false;
             }

@@ -484,4 +484,102 @@ public class DatabaseHelperTest {
         assertEquals("cash", rows.get(0).getPaymentMethod());
     }
 
+    @Test
+    public void editingATransferAmountMovesBothLegs() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.updateTransfer(transferId, 3000.0, "Move to savings", "cash", "bank"));
+
+        assertEquals(2000.0, db.getCashBalance(), DELTA);
+        assertEquals(3000.0, db.getBankBalance(), DELTA);
+        assertEquals("still no money created or destroyed",
+                5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void flippingATransferDirectionReversesItsEffect() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.updateTransfer(transferId, 2000.0, "Move to savings", "bank", "cash"));
+
+        assertEquals(7000.0, db.getCashBalance(), DELTA);
+        assertEquals(-2000.0, db.getBankBalance(), DELTA);
+        Transaction reloaded = db.getTransfer(transferId);
+        assertEquals("bank", reloaded.getFromMethod());
+        assertEquals("cash", reloaded.getToMethod());
+    }
+
+    @Test
+    public void editingATransferPreservesItsTimestampAndPairing() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        Transaction before = db.getTransactions(0, 10).get(0);
+
+        db.updateTransfer(before.getTransferId(), 3000.0, "Renamed", "cash", "bank");
+
+        Transaction after = db.getTransactions(0, 10).get(0);
+        assertEquals("editing must not move the row in history",
+                before.getDateTime(), after.getDateTime());
+        assertTrue("both legs must survive an edit", after.isTransfer());
+        assertEquals("Renamed", after.getDescription());
+    }
+
+    @Test
+    public void updatingAnUnknownTransferReturnsFalse() {
+        assertFalse(db.updateTransfer("no-such-transfer", 100.0, "x", "cash", "bank"));
+    }
+
+    @Test
+    public void deletingATransferRemovesBothLegs() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.deleteTransfer(transferId));
+
+        assertEquals(1, db.getTotalCount());
+        assertEquals(5000.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void deletingAnUnknownTransferReturnsFalse() {
+        assertFalse(db.deleteTransfer("no-such-transfer"));
+    }
+
+    @Test
+    public void aTransferLegCannotBeEditedAsAnOrdinaryTransaction() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        // Reach past the grouped query to get a real leg id.
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id FROM transactions LIMIT 1", null);
+        c.moveToFirst();
+        String legId = c.getString(0);
+        c.close();
+
+        assertFalse("editing one leg would orphan the other",
+                db.updateTransaction(legId, "debit", 99.0, "hijacked", "cash"));
+        assertEquals("balances must be untouched", 0.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferLegCannotBeDeletedAsAnOrdinaryTransaction() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id FROM transactions WHERE transferId IS NOT NULL LIMIT 1", null);
+        c.moveToFirst();
+        String legId = c.getString(0);
+        c.close();
+
+        assertFalse("deleting one leg would orphan the other",
+                db.deleteTransaction(legId));
+        assertEquals(3000.0, db.getCashBalance(), DELTA);
+        assertEquals(2000.0, db.getBankBalance(), DELTA);
+    }
+
 }
