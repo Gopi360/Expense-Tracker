@@ -24,12 +24,15 @@ public class MainActivity extends AppCompatActivity {
         tvCashBalance = findViewById(R.id.tvCashBalance);
         tvBankBalance = findViewById(R.id.tvBankBalance);
 
-        Button btnCredit  = findViewById(R.id.btnCredit);
-        Button btnDebit   = findViewById(R.id.btnDebit);
-        Button btnHistory = findViewById(R.id.btnHistory);
+        Button btnCredit   = findViewById(R.id.btnCredit);
+        Button btnDebit    = findViewById(R.id.btnDebit);
+        Button btnTransfer = findViewById(R.id.btnTransfer);
+        Button btnHistory  = findViewById(R.id.btnHistory);
 
         btnCredit.setOnClickListener(v  -> openAddTransaction("credit"));
         btnDebit.setOnClickListener(v   -> openAddTransaction("debit"));
+        btnTransfer.setOnClickListener(v ->
+                startActivity(new Intent(this, TransferActivity.class)));
         btnHistory.setOnClickListener(v ->
                 startActivity(new Intent(this, TransactionHistoryActivity.class)));
     }
