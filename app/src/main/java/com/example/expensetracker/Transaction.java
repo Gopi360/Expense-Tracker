@@ -46,11 +46,30 @@ public class Transaction {
     }
 
     public String getId()                       { return id; }
+
+    /**
+     * "credit" or "debit" — meaningless when {@link #isTransfer()} is true.
+     * A collapsed transfer group's type comes from MAX() over its two legs'
+     * {'credit','debit'}, which is invariably 'debit' ('debit' > 'credit'
+     * lexically) regardless of the transfer's actual direction. Callers must
+     * check {@link #isTransfer()} first and use {@link #getFromMethod()} /
+     * {@link #getToMethod()} for a transfer's direction instead of this field.
+     */
     public String getType()                     { return type; }
     public double getAmount()                   { return amount; }
     public String getDescription()              { return description; }
     public long getDateTime()                   { return dateTime; }
     public double getBalanceAfterTransaction()  { return balanceAfterTransaction; }
+
+    /**
+     * "cash" or "bank" — meaningless when {@link #isTransfer()} is true.
+     * A collapsed transfer group's paymentMethod comes from MAX() over its two
+     * legs' {'cash','bank'}, which is invariably 'cash' ('cash' > 'bank'
+     * lexically) regardless of which side the money actually landed on.
+     * Callers must check {@link #isTransfer()} first and use
+     * {@link #getFromMethod()} / {@link #getToMethod()} for a transfer's
+     * direction instead of this field.
+     */
     public String getPaymentMethod()            { return paymentMethod; }
     public String getKind()                     { return kind; }
     public String getTransferId()               { return transferId; }

@@ -61,6 +61,12 @@ public class TransactionAdapter extends RecyclerView.Adapter<TransactionAdapter.
         h.tvBalance.setText(String.format(Locale.getDefault(), "₹ %.2f", t.getBalanceAfterTransaction()));
 
         if (t.isTransfer()) {
+            // LOAD-BEARING ORDER: this isTransfer() arm must stay ahead of the
+            // isCredit check below. getType() on a collapsed transfer group is
+            // junk (always "debit" — see Transaction.getType()'s javadoc), so
+            // any branch that reads it before checking isTransfer() would
+            // render every transfer as a red debit.
+            //
             // A transfer moves money without earning or spending it, so it gets
             // neither a sign nor a red/green colour.
             h.tvType.setText("⇄ TRANSFER");

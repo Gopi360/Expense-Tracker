@@ -203,6 +203,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      * every transfer row in history showing a balance short by the transfer amount,
      * with every other figure on screen still correct.
      *
+     * @param amount      the transfer amount, written identically to both legs
+     * @param description written identically to both legs
      * @param fromMethod "cash" or "bank" — where the money leaves
      * @param toMethod   "cash" or "bank" — where it arrives
      * @return true if both legs were written
@@ -402,7 +404,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     /**
      * Returns a page of transactions, newest first.
-     * @param offset number of records to skip
+     * @param offset number of history entries to skip — a transfer's two legs are one entry
      * @param limit  max records to return
      */
     public List<Transaction> getTransactions(int offset, int limit) {
@@ -494,7 +496,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     /**
-     * Returns the total number of transactions stored.
+     * Returns the total number of history entries — an ordinary row counts as
+     * one, and a transfer's two legs together also count as one.
      */
     public int getTotalCount() {
         SQLiteDatabase db = this.getReadableDatabase();

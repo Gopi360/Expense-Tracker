@@ -428,11 +428,62 @@ public class DatabaseHelperTest {
     }
 
     @Test
+    public void twoTransfersRemainDistinctGroupsWithCorrectDirections() {
+        // Every other transfer test in this file uses exactly one transfer, so
+        // nothing else exercises GROUP BY COALESCE(transferId, id) with two
+        // distinct transfers present. This pins that they group separately —
+        // neither merging into one row nor swapping with each other — with an
+        // ordinary row mixed in among them.
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        db.insertTransfer(500.0, "Move back", "bank", "cash");
+
+        assertEquals("two transfers plus one ordinary row are three entries, not one and not four",
+                3, db.getTotalCount());
+
+        List<Transaction> all = db.getTransactions(0, 10);
+        assertEquals(3, all.size());
+
+        // Newest first: the second transfer, then the first transfer, then the salary.
+        Transaction second = all.get(0);
+        Transaction first  = all.get(1);
+        Transaction salary = all.get(2);
+
+        assertTrue("second transfer collapsed into a transfer row", second.isTransfer());
+        assertEquals(500.0, second.getAmount(), DELTA);
+        assertEquals("Move back", second.getDescription());
+        assertEquals("bank", second.getFromMethod());
+        assertEquals("cash", second.getToMethod());
+
+        assertTrue("first transfer collapsed into a transfer row", first.isTransfer());
+        assertEquals(2000.0, first.getAmount(), DELTA);
+        assertEquals("Move to savings", first.getDescription());
+        assertEquals("cash", first.getFromMethod());
+        assertEquals("bank", first.getToMethod());
+
+        assertFalse("the ordinary row stays ordinary", salary.isTransfer());
+        assertEquals("Salary", salary.getDescription());
+
+        assertFalse("the two transfers must not have merged into one group",
+                first.getTransferId().equals(second.getTransferId()));
+
+        assertEquals(3500.0, db.getCashBalance(), DELTA);
+        assertEquals(1500.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
     public void paginationAcrossATransferNeitherSkipsNorDuplicates() {
         // Three entries, one of which is a transfer, read one page at a time.
         db.insertTransaction("credit", 5000.0, "Salary", "cash");
         db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
         db.insertTransaction("debit", 250.0, "Chai", "cash");
+
+        // Pins that getTotalCount agrees with getTransactions on what a unit is.
+        // Without this, a getTotalCount reverted to COUNT(*) would return 4, the
+        // loop below would run an extra, empty-page offset, and every assertion
+        // that follows would still pass — silently defeating this test's name.
+        assertEquals(3, db.getTotalCount());
 
         List<Transaction> all = new ArrayList<>();
         for (int offset = 0; offset < db.getTotalCount(); offset += 1) {
@@ -556,7 +607,7 @@ public class DatabaseHelperTest {
         db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
         // Reach past the grouped query to get a real leg id.
         Cursor c = db.getReadableDatabase().rawQuery(
-                "SELECT id FROM transactions LIMIT 1", null);
+                "SELECT id FROM transactions WHERE transferId IS NOT NULL LIMIT 1", null);
         c.moveToFirst();
         String legId = c.getString(0);
         c.close();
