@@ -16,7 +16,7 @@ import java.util.UUID;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME    = "expense_tracker.db";
-    private static final int    DATABASE_VERSION = 2;
+    private static final int    DATABASE_VERSION = 3;
 
     // Table & column names
     private static final String TABLE  = "transactions";
@@ -27,6 +27,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_DATE    = "dateTime";
     private static final String COL_BALANCE = "balanceAfter";
     private static final String COL_PAYMENT = "paymentMethod";
+    private static final String COL_KIND       = "kind";
+    private static final String COL_TRANSFERID = "transferId";
+
+    /** An ordinary income or expense row. */
+    static final String KIND_NORMAL   = "normal";
+    /** One leg of a cash<->bank transfer. Always paired via transferId. */
+    static final String KIND_TRANSFER = "transfer";
 
     /**
      * Signed sum of matching rows: credits add, debits subtract.
@@ -53,7 +60,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_DESC    + " TEXT, "
                 + COL_DATE    + " INTEGER NOT NULL, "
                 + COL_BALANCE + " REAL NOT NULL, "
-                + COL_PAYMENT + " TEXT DEFAULT 'cash')";
+                + COL_PAYMENT + " TEXT DEFAULT 'cash', "
+                + COL_KIND    + " TEXT NOT NULL DEFAULT '" + KIND_NORMAL + "', "
+                + COL_TRANSFERID + " TEXT)";
         db.execSQL(sql);
     }
 
@@ -62,6 +71,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         if (oldVersion < 2) {
             // Add paymentMethod column to existing table
             db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN " + COL_PAYMENT + " TEXT DEFAULT 'cash'");
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN " + COL_KIND
+                    + " TEXT NOT NULL DEFAULT '" + KIND_NORMAL + "'");
+            db.execSQL("ALTER TABLE " + TABLE + " ADD COLUMN " + COL_TRANSFERID + " TEXT");
         }
     }
 
@@ -112,6 +126,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             values.put(COL_DATE,    System.currentTimeMillis());
             values.put(COL_BALANCE, 0);   // placeholder; rebuilt below in the same transaction
             values.put(COL_PAYMENT, paymentMethod);
+            values.put(COL_KIND, KIND_NORMAL);
+            // transferId deliberately left NULL — this is not a transfer leg.
 
             if (db.insert(TABLE, null, values) == -1) {
                 return false;

@@ -7,6 +7,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 
 import org.junit.After;
 import org.junit.Before;
@@ -268,6 +269,37 @@ public class DatabaseHelperTest {
         assertEquals( 70.0, all.get(1).getBalanceAfterTransaction(), DELTA);
         assertEquals( 60.0, all.get(2).getBalanceAfterTransaction(), DELTA);
         assertEquals(100.0, all.get(3).getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void upgradingFromV2PreservesEveryBalance() {
+        Context context = RuntimeEnvironment.getApplication();
+        db.close();
+        context.deleteDatabase("expense_tracker.db");
+
+        // The schema exactly as it shipped at DATABASE_VERSION 2.
+        SQLiteDatabase raw = context.openOrCreateDatabase(
+                "expense_tracker.db", Context.MODE_PRIVATE, null);
+        raw.execSQL("CREATE TABLE transactions ("
+                + "id TEXT PRIMARY KEY, type TEXT NOT NULL, amount REAL NOT NULL, "
+                + "description TEXT, dateTime INTEGER NOT NULL, balanceAfter REAL NOT NULL, "
+                + "paymentMethod TEXT DEFAULT 'cash')");
+        raw.execSQL("INSERT INTO transactions VALUES "
+                + "('a','credit',1000.0,'Salary',1000,1000.0,'bank')");
+        raw.execSQL("INSERT INTO transactions VALUES "
+                + "('b','debit',250.0,'Chai',2000,750.0,'cash')");
+        raw.execSQL("PRAGMA user_version = 2");
+        raw.close();
+
+        db = new DatabaseHelper(context);   // triggers onUpgrade 2 -> 3
+
+        assertEquals(750.0,   db.getBalance(),     DELTA);
+        assertEquals(-250.0,  db.getCashBalance(), DELTA);
+        assertEquals(1000.0,  db.getBankBalance(), DELTA);
+
+        // Pre-existing rows must land as ordinary, non-transfer records.
+        assertEquals(DatabaseHelper.KIND_NORMAL, db.getTransaction("a").getKind());
+        assertNull(db.getTransaction("a").getTransferId());
     }
 
 }
