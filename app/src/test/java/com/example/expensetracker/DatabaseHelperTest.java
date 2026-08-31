@@ -9,6 +9,8 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 
+import java.util.List;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -312,6 +314,56 @@ public class DatabaseHelperTest {
         assertNull(t.getTransferId());
         assertNull("a single row has no direction", t.getFromMethod());
         assertNull("a single row has no direction", t.getToMethod());
+    }
+
+    @Test
+    public void aTransferLeavesTheTotalBalanceUntouched() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals("a transfer creates and destroys no money",
+                5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferMovesMoneyFromCashToBank() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals(3000.0, db.getCashBalance(), DELTA);
+        assertEquals(2000.0, db.getBankBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferWritesTwoTaggedLegsSharingOneId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        List<Transaction> rows = db.getTransactions(0, 10);
+        assertEquals("two legs on disk before grouping lands", 2, rows.size());
+
+        for (Transaction row : rows) {
+            assertEquals(DatabaseHelper.KIND_TRANSFER, row.getKind());
+            assertNotNull(row.getTransferId());
+        }
+        assertEquals("both legs share one transferId",
+                rows.get(0).getTransferId(), rows.get(1).getTransferId());
+        assertEquals("both legs share one timestamp",
+                rows.get(0).getDateTime(), rows.get(1).getDateTime());
+    }
+
+    @Test
+    public void theCreditLegIsTheLaterOfTheTwo() {
+        // Load-bearing: the collapsed history row reads its running balance from
+        // the credit leg, which is only the post-transfer figure if that leg is
+        // the later one. getTransactions returns newest-first, so index 0 here.
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        List<Transaction> rows = db.getTransactions(0, 10);
+        assertEquals("credit leg must sort first when newest-first",
+                "credit", rows.get(0).getType());
+        assertEquals("debit", rows.get(1).getType());
     }
 
 }

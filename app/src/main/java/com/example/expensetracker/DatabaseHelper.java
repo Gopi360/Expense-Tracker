@@ -140,6 +140,66 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
     }
 
+    // ─── TRANSFERS ───────────────────────────────────────────────────────────
+
+    /**
+     * Records a cash<->bank transfer as two paired rows, then rebuilds the cache.
+     *
+     * The two legs share one transferId and one dateTime. Because each leg carries
+     * an ordinary type and paymentMethod, every balance query keeps working with no
+     * knowledge of transfers at all: the debit leg lands in the source method's sum,
+     * the credit leg in the destination's, and the two cancel in the total.
+     *
+     * ORDER IS LOAD-BEARING: the debit leg is inserted first so the credit leg
+     * always holds the higher rowid. getTransactions reads the collapsed row's
+     * running balance from the credit leg, which is the post-transfer figure only
+     * if that leg is the later of the two. Swapping these two calls would leave
+     * every transfer row in history showing a balance short by the transfer amount,
+     * with every other figure on screen still correct.
+     *
+     * @param fromMethod "cash" or "bank" — where the money leaves
+     * @param toMethod   "cash" or "bank" — where it arrives
+     * @return true if both legs were written
+     */
+    public boolean insertTransfer(double amount, String description,
+                                  String fromMethod, String toMethod) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.beginTransaction();
+        try {
+            String transferId = UUID.randomUUID().toString();
+            long   dateTime   = System.currentTimeMillis();
+
+            if (!insertLeg(db, transferId, "debit",  amount, description, fromMethod, dateTime)) {
+                return false;
+            }
+            if (!insertLeg(db, transferId, "credit", amount, description, toMethod, dateTime)) {
+                return false;
+            }
+
+            recomputeBalanceCache(db);
+            db.setTransactionSuccessful();
+            return true;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    /** Writes one leg of a transfer. Callers must already hold a database transaction. */
+    private boolean insertLeg(SQLiteDatabase db, String transferId, String type, double amount,
+                              String description, String paymentMethod, long dateTime) {
+        ContentValues values = new ContentValues();
+        values.put(COL_ID,         UUID.randomUUID().toString());
+        values.put(COL_TYPE,       type);
+        values.put(COL_AMOUNT,     amount);
+        values.put(COL_DESC,       description);
+        values.put(COL_DATE,       dateTime);
+        values.put(COL_BALANCE,    0);   // placeholder; rebuilt by the caller
+        values.put(COL_PAYMENT,    paymentMethod);
+        values.put(COL_KIND,       KIND_TRANSFER);
+        values.put(COL_TRANSFERID, transferId);
+        return db.insert(TABLE, null, values) != -1;
+    }
+
     // ─── UPDATE ──────────────────────────────────────────────────────────────
 
     /**
