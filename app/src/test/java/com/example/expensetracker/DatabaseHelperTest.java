@@ -7,6 +7,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -268,6 +275,382 @@ public class DatabaseHelperTest {
         assertEquals( 70.0, all.get(1).getBalanceAfterTransaction(), DELTA);
         assertEquals( 60.0, all.get(2).getBalanceAfterTransaction(), DELTA);
         assertEquals(100.0, all.get(3).getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void upgradingFromV2PreservesEveryBalance() {
+        Context context = RuntimeEnvironment.getApplication();
+        db.close();
+        context.deleteDatabase("expense_tracker.db");
+
+        // The schema exactly as it shipped at DATABASE_VERSION 2.
+        SQLiteDatabase raw = context.openOrCreateDatabase(
+                "expense_tracker.db", Context.MODE_PRIVATE, null);
+        raw.execSQL("CREATE TABLE transactions ("
+                + "id TEXT PRIMARY KEY, type TEXT NOT NULL, amount REAL NOT NULL, "
+                + "description TEXT, dateTime INTEGER NOT NULL, balanceAfter REAL NOT NULL, "
+                + "paymentMethod TEXT DEFAULT 'cash')");
+        raw.execSQL("INSERT INTO transactions VALUES "
+                + "('a','credit',1000.0,'Salary',1000,1000.0,'bank')");
+        raw.execSQL("INSERT INTO transactions VALUES "
+                + "('b','debit',250.0,'Chai',2000,750.0,'cash')");
+        raw.execSQL("PRAGMA user_version = 2");
+        raw.close();
+
+        db = new DatabaseHelper(context);   // triggers onUpgrade 2 -> 3
+
+        assertEquals(750.0,   db.getBalance(),     DELTA);
+        assertEquals(-250.0,  db.getCashBalance(), DELTA);
+        assertEquals(1000.0,  db.getBankBalance(), DELTA);
+
+        // Pre-existing rows must land as ordinary, non-transfer records.
+        assertEquals(DatabaseHelper.KIND_NORMAL, db.getTransaction("a").getKind());
+        assertNull(db.getTransaction("a").getTransferId());
+    }
+
+    @Test
+    public void anOrdinaryRowReportsItselfAsNormalAndUnpaired() {
+        db.insertTransaction("debit", 250.0, "Chai", "cash");
+
+        Transaction t = db.getTransactions(0, 10).get(0);
+
+        assertEquals(DatabaseHelper.KIND_NORMAL, t.getKind());
+        assertNull(t.getTransferId());
+        assertNull("a single row has no direction", t.getFromMethod());
+        assertNull("a single row has no direction", t.getToMethod());
+    }
+
+    @Test
+    public void aTransferLeavesTheTotalBalanceUntouched() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals("a transfer creates and destroys no money",
+                5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferMovesMoneyFromCashToBank() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals(3000.0, db.getCashBalance(), DELTA);
+        assertEquals(2000.0, db.getBankBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferWritesTwoTaggedLegsSharingOneId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        // Read the legs directly — getTransactions now collapses them into one row.
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT kind, transferId, dateTime FROM transactions ORDER BY rowid ASC", null);
+        try {
+            assertEquals("two legs on disk", 2, c.getCount());
+
+            c.moveToNext();
+            String kindA = c.getString(0), transferIdA = c.getString(1);
+            long dateTimeA = c.getLong(2);
+            c.moveToNext();
+
+            assertEquals(DatabaseHelper.KIND_TRANSFER, kindA);
+            assertEquals(DatabaseHelper.KIND_TRANSFER, c.getString(0));
+            assertNotNull(transferIdA);
+            assertEquals("both legs share one transferId", transferIdA, c.getString(1));
+            assertEquals("both legs share one timestamp", dateTimeA, c.getLong(2));
+        } finally {
+            c.close();
+        }
+    }
+
+    @Test
+    public void theCreditLegIsTheLaterOfTheTwo() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT type FROM transactions ORDER BY rowid ASC", null);
+        try {
+            c.moveToNext();
+            assertEquals("debit leg must be written first", "debit", c.getString(0));
+            c.moveToNext();
+            assertEquals("credit leg must be written second", "credit", c.getString(0));
+        } finally {
+            c.close();
+        }
+    }
+
+    @Test
+    public void historyCollapsesATransferIntoOneRow() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        List<Transaction> rows = db.getTransactions(0, 10);
+
+        assertEquals("one salary row plus one transfer row", 2, rows.size());
+        Transaction transfer = rows.get(0);
+        assertTrue(transfer.isTransfer());
+        assertEquals(2000.0, transfer.getAmount(), DELTA);
+        assertEquals("Move to savings", transfer.getDescription());
+        assertEquals("cash", transfer.getFromMethod());
+        assertEquals("bank", transfer.getToMethod());
+    }
+
+    @Test
+    public void aCollapsedTransferShowsThePostTransferBalance() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Transaction transfer = db.getTransactions(0, 10).get(0);
+
+        // A transfer nets to zero, so the running balance is unchanged by it.
+        assertEquals(5000.0, transfer.getBalanceAfterTransaction(), DELTA);
+    }
+
+    @Test
+    public void aCollapsedTransferIsIdentifiedByItsTransferId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        Transaction transfer = db.getTransactions(0, 10).get(0);
+
+        assertNotNull(transfer.getTransferId());
+        assertEquals("the collapsed row is keyed by transferId, not a leg id",
+                transfer.getTransferId(), transfer.getId());
+    }
+
+    @Test
+    public void getTotalCountCountsATransferAsOne() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+
+        assertEquals("two legs are one history entry", 2, db.getTotalCount());
+    }
+
+    @Test
+    public void twoTransfersRemainDistinctGroupsWithCorrectDirections() {
+        // Every other transfer test in this file uses exactly one transfer, so
+        // nothing else exercises GROUP BY COALESCE(transferId, id) with two
+        // distinct transfers present. This pins that they group separately —
+        // neither merging into one row nor swapping with each other — with an
+        // ordinary row mixed in among them.
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        db.insertTransfer(500.0, "Move back", "bank", "cash");
+
+        assertEquals("two transfers plus one ordinary row are three entries, not one and not four",
+                3, db.getTotalCount());
+
+        List<Transaction> all = db.getTransactions(0, 10);
+        assertEquals(3, all.size());
+
+        // Newest first: the second transfer, then the first transfer, then the salary.
+        Transaction second = all.get(0);
+        Transaction first  = all.get(1);
+        Transaction salary = all.get(2);
+
+        assertTrue("second transfer collapsed into a transfer row", second.isTransfer());
+        assertEquals(500.0, second.getAmount(), DELTA);
+        assertEquals("Move back", second.getDescription());
+        assertEquals("bank", second.getFromMethod());
+        assertEquals("cash", second.getToMethod());
+
+        assertTrue("first transfer collapsed into a transfer row", first.isTransfer());
+        assertEquals(2000.0, first.getAmount(), DELTA);
+        assertEquals("Move to savings", first.getDescription());
+        assertEquals("cash", first.getFromMethod());
+        assertEquals("bank", first.getToMethod());
+
+        assertFalse("the ordinary row stays ordinary", salary.isTransfer());
+        assertEquals("Salary", salary.getDescription());
+
+        assertFalse("the two transfers must not have merged into one group",
+                first.getTransferId().equals(second.getTransferId()));
+
+        assertEquals(3500.0, db.getCashBalance(), DELTA);
+        assertEquals(1500.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void paginationAcrossATransferNeitherSkipsNorDuplicates() {
+        // Three entries, one of which is a transfer, read one page at a time.
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        db.insertTransaction("debit", 250.0, "Chai", "cash");
+
+        // Pins that getTotalCount agrees with getTransactions on what a unit is.
+        // Without this, a getTotalCount reverted to COUNT(*) would return 4, the
+        // loop below would run an extra, empty-page offset, and every assertion
+        // that follows would still pass — silently defeating this test's name.
+        assertEquals(3, db.getTotalCount());
+
+        List<Transaction> all = new ArrayList<>();
+        for (int offset = 0; offset < db.getTotalCount(); offset += 1) {
+            all.addAll(db.getTransactions(offset, 1));
+        }
+
+        assertEquals(3, all.size());
+        Set<String> ids = new HashSet<>();
+        for (Transaction t : all) {
+            assertTrue("no id may repeat across pages", ids.add(t.getId()));
+        }
+        assertEquals("paged reads must match a single unpaged read",
+                db.getTransactions(0, 100).size(), all.size());
+    }
+
+    @Test
+    public void getTransferLoadsATransferByItsId() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        Transaction loaded = db.getTransfer(transferId);
+
+        assertNotNull(loaded);
+        assertEquals(2000.0, loaded.getAmount(), DELTA);
+        assertEquals("cash", loaded.getFromMethod());
+        assertEquals("bank", loaded.getToMethod());
+    }
+
+    @Test
+    public void getTransferOnUnknownIdReturnsNull() {
+        assertNull(db.getTransfer("no-such-transfer"));
+    }
+
+    @Test
+    public void anOrphanedLegDegradesToAnOrdinaryRow() {
+        // Reachable only through a bug or a manual database edit. It must not
+        // crash the read path or render "cash -> null".
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+        db.getWritableDatabase().execSQL(
+                "DELETE FROM transactions WHERE transferId = ? AND type = 'credit'",
+                new Object[]{transferId});
+
+        List<Transaction> rows = db.getTransactions(0, 10);
+
+        assertEquals(1, rows.size());
+        assertFalse("a lone leg is not a complete transfer", rows.get(0).isTransfer());
+        assertEquals("debit", rows.get(0).getType());
+        assertEquals("cash", rows.get(0).getPaymentMethod());
+    }
+
+    @Test
+    public void editingATransferAmountMovesBothLegs() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.updateTransfer(transferId, 3000.0, "Move to savings", "cash", "bank"));
+
+        assertEquals(2000.0, db.getCashBalance(), DELTA);
+        assertEquals(3000.0, db.getBankBalance(), DELTA);
+        assertEquals("still no money created or destroyed",
+                5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void flippingATransferDirectionReversesItsEffect() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.updateTransfer(transferId, 2000.0, "Move to savings", "bank", "cash"));
+
+        assertEquals(7000.0, db.getCashBalance(), DELTA);
+        assertEquals(-2000.0, db.getBankBalance(), DELTA);
+        Transaction reloaded = db.getTransfer(transferId);
+        assertEquals("bank", reloaded.getFromMethod());
+        assertEquals("cash", reloaded.getToMethod());
+    }
+
+    @Test
+    public void editingATransferPreservesItsTimestampAndPairing() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        Transaction before = db.getTransactions(0, 10).get(0);
+
+        db.updateTransfer(before.getTransferId(), 3000.0, "Renamed", "cash", "bank");
+
+        Transaction after = db.getTransactions(0, 10).get(0);
+        assertEquals("editing must not move the row in history",
+                before.getDateTime(), after.getDateTime());
+        assertTrue("both legs must survive an edit", after.isTransfer());
+        assertEquals("Renamed", after.getDescription());
+    }
+
+    @Test
+    public void updatingAnUnknownTransferReturnsFalse() {
+        assertFalse(db.updateTransfer("no-such-transfer", 100.0, "x", "cash", "bank"));
+    }
+
+    @Test
+    public void deletingATransferRemovesBothLegs() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+
+        assertTrue(db.deleteTransfer(transferId));
+
+        assertEquals(1, db.getTotalCount());
+        assertEquals(5000.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void deletingAnUnknownTransferReturnsFalse() {
+        assertFalse(db.deleteTransfer("no-such-transfer"));
+    }
+
+    @Test
+    public void aTransferLegCannotBeEditedAsAnOrdinaryTransaction() {
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        // Reach past the grouped query to get a real leg id.
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id FROM transactions WHERE transferId IS NOT NULL LIMIT 1", null);
+        c.moveToFirst();
+        String legId = c.getString(0);
+        c.close();
+
+        assertFalse("editing one leg would orphan the other",
+                db.updateTransaction(legId, "debit", 99.0, "hijacked", "cash"));
+        assertEquals("balances must be untouched", 0.0, db.getBalance(), DELTA);
+    }
+
+    @Test
+    public void aTransferLegCannotBeDeletedAsAnOrdinaryTransaction() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id FROM transactions WHERE transferId IS NOT NULL LIMIT 1", null);
+        c.moveToFirst();
+        String legId = c.getString(0);
+        c.close();
+
+        assertFalse("deleting one leg would orphan the other",
+                db.deleteTransaction(legId));
+        assertEquals(3000.0, db.getCashBalance(), DELTA);
+        assertEquals(2000.0, db.getBankBalance(), DELTA);
+    }
+
+    @Test
+    public void deletingAnOrphanedTransferSucceedsAndClearsIt() {
+        db.insertTransaction("credit", 5000.0, "Salary", "cash");
+        db.insertTransfer(2000.0, "Move to savings", "cash", "bank");
+        String transferId = db.getTransactions(0, 10).get(0).getTransferId();
+        // Orphan it the same way anOrphanedLegDegradesToAnOrdinaryRow does: raw SQL,
+        // bypassing the guards, so only the debit leg survives.
+        db.getWritableDatabase().execSQL(
+                "DELETE FROM transactions WHERE transferId = ? AND type = 'credit'",
+                new Object[]{transferId});
+
+        assertTrue("removing the broken leftover row is the desired outcome, not a failure",
+                db.deleteTransfer(transferId));
+
+        assertEquals(1, db.getTotalCount());
+        assertEquals(5000.0, db.getCashBalance(), DELTA);
+        assertEquals(0.0, db.getBankBalance(), DELTA);
+        assertEquals(5000.0, db.getBalance(), DELTA);
     }
 
 }

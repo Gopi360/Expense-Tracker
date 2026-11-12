@@ -27,7 +27,6 @@ public class AddTransactionActivity extends AppCompatActivity {
     private static final int COLOR_RED         = 0xFFF85149;
     private static final int COLOR_GREEN_DIM   = 0xFF0D2B1A;
     private static final int COLOR_RED_DIM     = 0xFF2D0F0F;
-    private static final int COLOR_TEAL        = 0xFF00D4AA;
 
     private EditText       etAmount, etDescription;
     private RadioGroup     rgPaymentMethod, rgType;

@@ -11,9 +11,17 @@ public class Transaction {
     private long dateTime;  // Unix timestamp in milliseconds
     private double balanceAfterTransaction;
     private String paymentMethod; // "cash" or "bank"
+    private String kind;          // "normal" or "transfer"
+    private String transferId;    // non-null only on a transfer
+
+    // Direction, populated only by the grouped history query. A single row read
+    // on its own cannot know a direction — only a collapsed pair can.
+    private String fromMethod;
+    private String toMethod;
 
     public Transaction(String id, String type, double amount, String description,
-                       long dateTime, double balanceAfterTransaction, String paymentMethod) {
+                       long dateTime, double balanceAfterTransaction, String paymentMethod,
+                       String kind, String transferId, String fromMethod, String toMethod) {
         this.id = id;
         this.type = type;
         this.amount = amount;
@@ -21,13 +29,50 @@ public class Transaction {
         this.dateTime = dateTime;
         this.balanceAfterTransaction = balanceAfterTransaction;
         this.paymentMethod = paymentMethod;
+        this.kind = kind;
+        this.transferId = transferId;
+        this.fromMethod = fromMethod;
+        this.toMethod = toMethod;
+    }
+
+    /**
+     * True when this row represents a complete transfer.
+     * Deliberately stricter than checking kind: an orphaned leg (a transfer row
+     * whose partner is missing) has kind 'transfer' but only one direction, and
+     * must degrade to rendering as an ordinary row rather than showing "null".
+     */
+    public boolean isTransfer() {
+        return fromMethod != null && toMethod != null;
     }
 
     public String getId()                       { return id; }
+
+    /**
+     * "credit" or "debit" — meaningless when {@link #isTransfer()} is true.
+     * A collapsed transfer group's type comes from MAX() over its two legs'
+     * {'credit','debit'}, which is invariably 'debit' ('debit' > 'credit'
+     * lexically) regardless of the transfer's actual direction. Callers must
+     * check {@link #isTransfer()} first and use {@link #getFromMethod()} /
+     * {@link #getToMethod()} for a transfer's direction instead of this field.
+     */
     public String getType()                     { return type; }
     public double getAmount()                   { return amount; }
     public String getDescription()              { return description; }
     public long getDateTime()                   { return dateTime; }
     public double getBalanceAfterTransaction()  { return balanceAfterTransaction; }
+
+    /**
+     * "cash" or "bank" — meaningless when {@link #isTransfer()} is true.
+     * A collapsed transfer group's paymentMethod comes from MAX() over its two
+     * legs' {'cash','bank'}, which is invariably 'cash' ('cash' > 'bank'
+     * lexically) regardless of which side the money actually landed on.
+     * Callers must check {@link #isTransfer()} first and use
+     * {@link #getFromMethod()} / {@link #getToMethod()} for a transfer's
+     * direction instead of this field.
+     */
     public String getPaymentMethod()            { return paymentMethod; }
+    public String getKind()                     { return kind; }
+    public String getTransferId()               { return transferId; }
+    public String getFromMethod()               { return fromMethod; }
+    public String getToMethod()                 { return toMethod; }
 }

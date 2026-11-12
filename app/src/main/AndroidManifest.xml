@@ -25,6 +25,12 @@
             android:exported="false"
             android:windowSoftInputMode="stateVisible|adjustResize" />
 
+        <!-- Cash <-> bank transfer (auto-shows keyboard) -->
+        <activity
+            android:name=".TransferActivity"
+            android:exported="false"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
         <!-- Transaction history -->
         <activity
             android:name=".TransactionHistoryActivity"

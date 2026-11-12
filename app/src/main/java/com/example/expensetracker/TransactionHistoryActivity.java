@@ -67,6 +67,15 @@ public class TransactionHistoryActivity extends AppCompatActivity {
     }
 
     private void openForEdit(Transaction transaction) {
+        // A transfer is two rows collapsed into one; it is edited as a unit on a
+        // different screen, keyed by transferId rather than by a leg's id.
+        if (transaction.isTransfer()) {
+            Intent intent = new Intent(this, TransferActivity.class);
+            intent.putExtra("transferId", transaction.getTransferId());
+            startActivity(intent);
+            return;
+        }
+
         Intent intent = new Intent(this, AddTransactionActivity.class);
         intent.putExtra("transactionId", transaction.getId());
         startActivity(intent);

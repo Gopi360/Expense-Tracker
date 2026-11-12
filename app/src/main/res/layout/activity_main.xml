@@ -190,6 +190,19 @@
             android:layout_marginStart="6dp" />
     </LinearLayout>
 
+    <!-- ── Transfer Button ───────────────────────────────────────────────── -->
+    <Button
+        android:id="@+id/btnTransfer"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="12dp"
+        android:text="⇄  Transfer"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:backgroundTint="#0D2B2B"
+        android:textColor="#00D4AA" />
+
     <!-- ── History Button ────────────────────────────────────────────────── -->
     <Button
         android:id="@+id/btnHistory"
